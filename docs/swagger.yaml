@@ -1,0 +1,179 @@
+openapi: 3.0.0
+info:
+  title: Server Template API
+  description: Go HTTP Server Template API Documentation
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+  - url: https://api.example.com
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check if the service is running
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  message:
+                    type: string
+                    example: "service is running"
+
+  /api/v1/applications:
+    get:
+      summary: List applications
+      description: Get a list of all applications
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          description: Page size
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "success"
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Application'
+                  total:
+                    type: integer
+                    example: 100
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+    post:
+      summary: Create application
+      description: Create a new application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        '201':
+          description: Application created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 201
+                  message:
+                    type: string
+                    example: "created"
+                  data:
+                    $ref: '#/components/schemas/Application'
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+components:
+  schemas:
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        name:
+          type: string
+          example: "my-app"
+        version:
+          type: string
+          example: "1.0.0"
+        description:
+          type: string
+          example: "My application description"
+        created_at:
+          type: string
+          format: date-time
+          example: "2023-01-01T00:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2023-01-01T00:00:00Z"
+      required:
+        - id
+        - name
+        - version
+
+    CreateApplicationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "my-app"
+          pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+        version:
+          type: string
+          example: "1.0.0"
+          pattern: "^[^\\u4e00-\\u9fa5]+$"
+        description:
+          type: string
+          example: "My application description"
+      required:
+        - name
+        - version
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: "Bad request"
+        details:
+          type: array
+          items:
+            type: string
+          example: ["Field 'name' is required"]
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,143 @@
+# Go HTTP Server 项目规则
+
+## 项目结构
+这是一个基于Go语言的HTTP服务器项目，采用分层架构设计：
+
+### 目录结构
+- `cmd/` - 应用程序入口点
+- `pkg/` - 核心业务逻辑
+  - `server/` - 服务器实现
+  - `api/` - HTTP API层
+    - `dto/v1/` - 数据传输对象
+    - `assembler/v1/` - DTO与模型转换器
+  - `domain/` - 领域层
+    - `model/` - 数据模型
+    - `service/` - 业务服务接口和实现
+  - `infrastructure/` - 基础设施层
+    - `datastore/` - 数据存储抽象和实现
+    - `middleware/` - HTTP中间件
+  - `utils/` - 工具类
+    - `container/` - 依赖注入容器
+- `configs/` - 配置文件
+- `docs/` - 文档
+- `pkg/e2e/` - 端到端测试
+- `deploy/` - 部署文件
+
+## 技术栈
+- **HTTP框架**: Gin
+- **配置管理**: Viper
+- **数据库**: PostgreSQL + GORM
+- **依赖注入**: barnettZQG/inject
+- **验证**: go-playground/validator
+- **API文档**: Swagger
+
+## 编码规范
+
+### 命名规范
+- 包名：使用小写字母，避免下划线
+- 函数名：使用驼峰命名法
+- 常量：使用大写字母和下划线
+- 变量：使用驼峰命名法
+- 接口名：以Service结尾
+- 结构体：使用驼峰命名法
+
+### 代码组织
+1. **API层** (`pkg/api/`)
+   - 处理HTTP请求和响应
+   - 参数验证
+   - 路由定义
+   - 使用DTO进行数据传输
+
+2. **领域层** (`pkg/domain/`)
+   - 定义业务模型
+   - 实现业务逻辑
+   - 定义服务接口
+
+3. **基础设施层** (`pkg/infrastructure/`)
+   - 数据持久化
+   - 外部服务集成
+   - 中间件实现
+
+### 依赖注入
+使用barnettZQG/inject进行依赖注入：
+```go
+type applicationService struct {
+    Store datastore.DataStore `inject:"datastore"`
+}
+```
+
+### API设计规范
+- 使用RESTful API设计
+- 版本化API路径 (`/api/v1/`)
+- 统一的错误响应格式
+- 使用DTO进行请求/响应封装
+
+### 数据库设计
+- 使用GORM作为ORM
+- 自动迁移表结构
+- 支持软删除
+- 使用事务确保数据一致性
+
+### 错误处理
+- 使用Go的错误处理机制
+- 定义业务错误类型
+- 统一的错误响应格式
+
+### 测试规范
+- 单元测试覆盖核心业务逻辑
+- 集成测试验证API接口
+- 端到端测试验证完整流程
+
+## 开发流程
+1. 定义数据模型 (`pkg/domain/model/`)
+2. 实现数据存储层 (`pkg/infrastructure/datastore/`)
+3. 定义业务服务接口 (`pkg/domain/service/`)
+4. 实现业务服务 (`pkg/domain/service/`)
+5. 定义API DTO (`pkg/api/dto/v1/`)
+6. 实现API转换器 (`pkg/api/assembler/v1/`)
+7. 实现API处理器 (`pkg/api/`)
+8. 添加路由配置
+9. 编写测试
+
+## 配置管理
+- 使用Viper管理配置
+- 支持多环境配置
+- 配置热重载
+- 敏感信息使用环境变量
+
+## 部署
+- 支持Docker容器化部署
+- 提供Kubernetes部署文件
+- 健康检查端点
+- 优雅关闭
+
+## 监控和日志
+- 结构化日志输出
+- 请求日志中间件
+- 性能监控
+- 错误追踪
+
+## 安全规范
+- 输入验证和清理
+- SQL注入防护
+- XSS防护
+- CORS配置
+- 认证和授权
+
+## 性能优化
+- 连接池管理
+- 缓存策略
+- 异步处理
+- 资源限制
+
+## 代码质量
+- 使用golangci-lint进行代码检查
+- 代码覆盖率要求
+- 代码审查流程
+- 自动化测试
+
+## 文档要求
+- API文档（Swagger）
+- 架构设计文档
+- 部署文档
+- 开发指南

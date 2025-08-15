@@ -1,0 +1,51 @@
+# 服务器配置
+server:
+  port: 8080
+  host: "0.0.0.0"
+  mode: "release"  # debug, release
+  timeout: 30
+
+# 数据库配置
+database:
+  type: memory  # memory, postgresql, opengauss
+  host: localhost
+  port: 5432
+  database: server_tpl
+  user: postgres
+  password: password
+  sslmode: disable
+  max_idle: 10
+  max_open: 100
+  timeout: 30
+
+# Prometheus 监控配置
+prometheus:
+  enabled: true
+  metrics_path: /metrics
+
+# PProf 调试配置
+pprof:
+  enabled: true  # 测试时启用
+  path_prefix: /debug/pprof
+
+# 日志配置
+log:
+  level: "info"    # debug, info, warn, error, fatal
+  format: "json"   # json, text
+  output: "stdout" # stdout, stderr, file_path
+
+cors:
+  allow_origins:
+    - "*"
+  allow_methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - OPTIONS
+  allow_headers:
+    - Origin
+    - Content-Type
+    - Accept
+    - Authorization
+  allow_credentials: true

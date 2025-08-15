@@ -1,0 +1,261 @@
+package middleware
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/make-bin/server-tpl/pkg/utils/logger"
+	"github.com/olivere/elastic/v7"
+)
+
+// ElasticsearchConfig Elasticsearch配置
+type ElasticsearchConfig struct {
+	URLs     []string `mapstructure:"urls"`
+	Username string   `mapstructure:"username"`
+	Password string   `mapstructure:"password"`
+	Index    string   `mapstructure:"index"`
+}
+
+// ElasticsearchMiddleware Elasticsearch中间件
+type ElasticsearchMiddleware struct {
+	client *elastic.Client
+	config *ElasticsearchConfig
+}
+
+// NewElasticsearchMiddleware 创建Elasticsearch中间件
+func NewElasticsearchMiddleware(config *ElasticsearchConfig) (*ElasticsearchMiddleware, error) {
+	// 创建客户端选项
+	options := []elastic.ClientOptionFunc{
+		elastic.SetURL(config.URLs...),
+		elastic.SetSniff(false),
+		elastic.SetHealthcheck(false),
+	}
+
+	// 如果提供了认证信息
+	if config.Username != "" && config.Password != "" {
+		options = append(options, elastic.SetBasicAuth(config.Username, config.Password))
+	}
+
+	// 创建客户端
+	client, err := elastic.NewClient(options...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create elasticsearch client: %w", err)
+	}
+
+	// 测试连接
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	info, err := client.ElasticsearchVersion(config.URLs[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to elasticsearch: %w", err)
+	}
+
+	logger.WithField("version", info).Info("Elasticsearch middleware initialized successfully")
+
+	return &ElasticsearchMiddleware{
+		client: client,
+		config: config,
+	}, nil
+}
+
+// GetClient 获取Elasticsearch客户端
+func (e *ElasticsearchMiddleware) GetClient() *elastic.Client {
+	return e.client
+}
+
+// IndexDocument 索引文档
+func (e *ElasticsearchMiddleware) IndexDocument(index, id string, document interface{}) error {
+	ctx := context.Background()
+	_, err := e.client.Index().
+		Index(index).
+		Id(id).
+		BodyJson(document).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to index document: %w", err)
+	}
+
+	logger.WithField("index", index).
+		WithField("id", id).
+		Info("Document indexed successfully")
+
+	return nil
+}
+
+// GetDocument 获取文档
+func (e *ElasticsearchMiddleware) GetDocument(index, id string, result interface{}) error {
+	ctx := context.Background()
+	res, err := e.client.Get().
+		Index(index).
+		Id(id).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to get document: %w", err)
+	}
+
+	if err := json.Unmarshal(res.Source, result); err != nil {
+		return fmt.Errorf("failed to unmarshal document: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateDocument 更新文档
+func (e *ElasticsearchMiddleware) UpdateDocument(index, id string, document interface{}) error {
+	ctx := context.Background()
+	_, err := e.client.Update().
+		Index(index).
+		Id(id).
+		Doc(document).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to update document: %w", err)
+	}
+
+	logger.WithField("index", index).
+		WithField("id", id).
+		Info("Document updated successfully")
+
+	return nil
+}
+
+// DeleteDocument 删除文档
+func (e *ElasticsearchMiddleware) DeleteDocument(index, id string) error {
+	ctx := context.Background()
+	_, err := e.client.Delete().
+		Index(index).
+		Id(id).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to delete document: %w", err)
+	}
+
+	logger.WithField("index", index).
+		WithField("id", id).
+		Info("Document deleted successfully")
+
+	return nil
+}
+
+// SearchDocuments 搜索文档
+func (e *ElasticsearchMiddleware) SearchDocuments(index string, query elastic.Query, result interface{}) error {
+	ctx := context.Background()
+	res, err := e.client.Search().
+		Index(index).
+		Query(query).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to search documents: %w", err)
+	}
+
+	if err := json.Unmarshal(res.Hits.Hits, result); err != nil {
+		return fmt.Errorf("failed to unmarshal search results: %w", err)
+	}
+
+	logger.WithField("index", index).
+		WithField("total_hits", res.TotalHits()).
+		Info("Search completed successfully")
+
+	return nil
+}
+
+// BulkIndex 批量索引
+func (e *ElasticsearchMiddleware) BulkIndex(index string, documents []interface{}) error {
+	bulkRequest := e.client.Bulk()
+
+	for _, doc := range documents {
+		req := elastic.NewBulkIndexRequest().
+			Index(index).
+			Doc(doc)
+		bulkRequest = bulkRequest.Add(req)
+	}
+
+	ctx := context.Background()
+	res, err := bulkRequest.Do(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to bulk index documents: %w", err)
+	}
+
+	if res.Errors {
+		return fmt.Errorf("bulk indexing had errors")
+	}
+
+	logger.WithField("index", index).
+		WithField("count", len(documents)).
+		Info("Bulk indexing completed successfully")
+
+	return nil
+}
+
+// CreateIndex 创建索引
+func (e *ElasticsearchMiddleware) CreateIndex(index string, mapping string) error {
+	ctx := context.Background()
+	exists, err := e.client.IndexExists(index).Do(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check index existence: %w", err)
+	}
+
+	if exists {
+		logger.WithField("index", index).Info("Index already exists")
+		return nil
+	}
+
+	_, err = e.client.CreateIndex(index).
+		BodyString(mapping).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to create index: %w", err)
+	}
+
+	logger.WithField("index", index).Info("Index created successfully")
+	return nil
+}
+
+// DeleteIndex 删除索引
+func (e *ElasticsearchMiddleware) DeleteIndex(index string) error {
+	ctx := context.Background()
+	_, err := e.client.DeleteIndex(index).Do(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to delete index: %w", err)
+	}
+
+	logger.WithField("index", index).Info("Index deleted successfully")
+	return nil
+}
+
+// GetIndexStats 获取索引统计信息
+func (e *ElasticsearchMiddleware) GetIndexStats(index string) (*elastic.IndicesStatsResponse, error) {
+	ctx := context.Background()
+	stats, err := e.client.IndexStats(index).Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get index stats: %w", err)
+	}
+
+	return stats, nil
+}
+
+// Close 关闭连接
+func (e *ElasticsearchMiddleware) Close() error {
+	e.client.Stop()
+	logger.Info("Elasticsearch middleware closed")
+	return nil
+}
+
+// HealthCheck 健康检查
+func (e *ElasticsearchMiddleware) HealthCheck(ctx context.Context) error {
+	_, err := e.client.ElasticsearchVersion(e.config.URLs[0])
+	if err != nil {
+		return fmt.Errorf("elasticsearch health check failed: %w", err)
+	}
+
+	return nil
+}
