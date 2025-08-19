@@ -10,6 +10,9 @@ import (
 func InitRouter() *gin.Engine {
 	r := gin.New()
 
+	// 国际化解析
+	r.Use(middleware.I18n())
+
 	// 使用自定义错误处理中间件
 	r.Use(middleware.ErrorHandler())
 
@@ -29,8 +32,7 @@ func InitRouter() *gin.Engine {
 	// 健康检查端点
 	r.GET("/health", func(c *gin.Context) {
 		middleware.SuccessResponse(c, gin.H{
-			"status":  "ok",
-			"message": "service is running",
+			"status": "ok",
 		})
 	})
 

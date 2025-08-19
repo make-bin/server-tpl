@@ -3,9 +3,11 @@ package middleware
 import (
 	"net/http"
 	"runtime/debug"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/make-bin/server-tpl/pkg/utils/errors"
+	"github.com/make-bin/server-tpl/pkg/utils/i18n"
 	"github.com/make-bin/server-tpl/pkg/utils/logger"
 )
 
@@ -16,10 +18,13 @@ func ErrorHandler() gin.HandlerFunc {
 			logger.Errorf("Panic recovered: %s", err)
 			logger.Errorf("Stack trace: %s", debug.Stack())
 
-			c.JSON(http.StatusInternalServerError, errors.ErrorResponse{
-				Code:    500,
-				Message: "Internal server error",
-				Details: err,
+			bundle := i18n.Default()
+			locale := getLocale(c)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": bundle.Translate(locale, "error.500"),
+				"details": err,
+				"locale":  locale,
 			})
 			return
 		}
@@ -28,10 +33,13 @@ func ErrorHandler() gin.HandlerFunc {
 			logger.Errorf("Panic recovered: %v", err)
 			logger.Errorf("Stack trace: %s", debug.Stack())
 
-			c.JSON(http.StatusInternalServerError, errors.ErrorResponse{
-				Code:    500,
-				Message: "Internal server error",
-				Details: err.Error(),
+			bundle := i18n.Default()
+			locale := getLocale(c)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": bundle.Translate(locale, "error.500"),
+				"details": err.Error(),
+				"locale":  locale,
 			})
 			return
 		}
@@ -39,10 +47,13 @@ func ErrorHandler() gin.HandlerFunc {
 		logger.Errorf("Panic recovered: %v", recovered)
 		logger.Errorf("Stack trace: %s", debug.Stack())
 
-		c.JSON(http.StatusInternalServerError, errors.ErrorResponse{
-			Code:    500,
-			Message: "Internal server error",
-			Details: "Unknown error occurred",
+		bundle := i18n.Default()
+		locale := getLocale(c)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": bundle.Translate(locale, "error.500"),
+			"details": "Unknown error occurred",
+			"locale":  locale,
 		})
 	})
 }
@@ -65,7 +76,16 @@ func ErrorResponse(c *gin.Context, err error) {
 	// 根据错误码设置HTTP状态码
 	statusCode := getStatusCode(errorResp.Code)
 
-	c.JSON(statusCode, errorResp)
+	bundle := i18n.Default()
+	locale := getLocale(c)
+	msgKey := translateErrorKey(errorResp.Code)
+	c.JSON(statusCode, gin.H{
+		"code":    errorResp.Code,
+		"message": bundle.Translate(locale, msgKey),
+		"details": errorResp.Details,
+		"data":    errorResp.Data,
+		"locale":  locale,
+	})
 }
 
 // getStatusCode 根据错误码获取HTTP状态码
@@ -134,41 +154,73 @@ func getStatusCode(errorCode int) int {
 
 // SuccessResponse 统一成功响应
 func SuccessResponse(c *gin.Context, data interface{}) {
+	bundle := i18n.Default()
+	locale := getLocale(c)
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
-		"message": "success",
+		"message": bundle.Translate(locale, "common.success"),
 		"data":    data,
+		"locale":  locale,
 	})
 }
 
 // CreatedResponse 创建成功响应
 func CreatedResponse(c *gin.Context, data interface{}) {
+	bundle := i18n.Default()
+	locale := getLocale(c)
 	c.JSON(http.StatusCreated, gin.H{
 		"code":    201,
-		"message": "created",
+		"message": bundle.Translate(locale, "common.created"),
 		"data":    data,
+		"locale":  locale,
 	})
 }
 
 // NoContentResponse 无内容响应
 func NoContentResponse(c *gin.Context) {
+	bundle := i18n.Default()
+	locale := getLocale(c)
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
-		"message": "success",
+		"message": bundle.Translate(locale, "common.success"),
 		"data":    nil,
+		"locale":  locale,
 	})
 }
 
 // ListResponse 列表响应
 func ListResponse(c *gin.Context, data interface{}, total int64, page, size int) {
+	bundle := i18n.Default()
+	locale := getLocale(c)
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
-		"message": "success",
+		"message": bundle.Translate(locale, "common.success"),
 		"data": gin.H{
 			"list":  data,
 			"total": total,
 			"page":  page,
 			"size":  size,
 		},
+		"locale": locale,
 	})
+}
+
+// translateErrorKey converts numeric error code into a translation key
+// like "error.404" or defaults to "error.500".
+func translateErrorKey(code int) string {
+	switch code {
+	case 400, 401, 403, 404, 409, 422, 500:
+		return "error." + strconv.Itoa(code)
+	default:
+		if code >= 2000 && code < 2100 {
+			return "error.404"
+		}
+		if code >= 2100 && code < 2200 {
+			return "error.403"
+		}
+		if code >= 2200 && code < 2300 {
+			return "error.400"
+		}
+		return "error.500"
+	}
 }
