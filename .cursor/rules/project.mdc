@@ -52,33 +52,39 @@
 
 ---
 
-## 8. 存储架构设计
+## 8. 测试规范
 
-@.cursor/rules/08-storage-architecture.mdc
-
----
-
-## 9. Prometheus 监控规范
-
-@.cursor/rules/09-prometheus-monitoring.mdc
+@.cursor/rules/08-testing-standards.mdc
 
 ---
 
-## 10. 编译和运行
+## 9. 存储架构设计
 
-@.cursor/rules/10-compilation-running.mdc
-
----
-
-## 11. Go PProf 调试规范
-
-@.cursor/rules/11-go-pprof-debugging.mdc
+@.cursor/rules/09-storage-architecture.mdc
 
 ---
 
-## 12. 部署和运维
+## 10. Prometheus 监控规范
 
-@.cursor/rules/12-deployment-operations.mdc
+@.cursor/rules/10-prometheus-monitoring.mdc
+
+---
+
+## 11. 编译和运行
+
+@.cursor/rules/11-compilation-running.mdc
+
+---
+
+## 12. Go PProf 调试规范
+
+@.cursor/rules/12-go-pprof-debugging.mdc
+
+---
+
+## 13. 部署和运维
+
+@.cursor/rules/13-deployment-operations.mdc
 
 ---
 
@@ -102,9 +108,10 @@
 - [配置管理规范](./05-config-management.mdc)
 - [日志管理规范](./06-log-management.mdc)
 - [错误处理规范](./07-error-handling.mdc)
-- [存储架构设计](./08-storage-architecture.mdc)
-- [Prometheus 监控规范](./09-prometheus-monitoring.mdc)
-- [编译和运行](./10-compilation-running.mdc)
-- [Go PProf 调试规范](./11-go-pprof-debugging.mdc)
-- [部署和运维](./12-deployment-operations.mdc)
+- [测试规范](./08-testing-standards.mdc)
+- [存储架构设计](./09-storage-architecture.mdc)
+- [Prometheus 监控规范](./10-prometheus-monitoring.mdc)
+- [编译和运行](./11-compilation-running.mdc)
+- [Go PProf 调试规范](./12-go-pprof-debugging.mdc)
+- [部署和运维](./13-deployment-operations.mdc)
 

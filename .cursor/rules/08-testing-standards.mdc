@@ -1,0 +1,958 @@
+# 8. 测试规范
+
+## 8.1 概述
+
+本规范定义了Go HTTP Server项目的测试标准，包括单元测试、集成测试、测试覆盖率要求、测试工具和最佳实践。
+
+## 8.2 测试架构
+
+### 8.2.1 测试金字塔
+```
+测试金字塔（从底到顶）：
+1. 单元测试 - 测试单个函数/方法
+2. 集成测试 - 测试组件间交互
+3. 端到端测试 - 测试完整业务流程
+4. 性能测试 - 测试系统性能
+```
+
+### 8.2.2 测试分类
+- **单元测试**: 测试最小可测试单元
+- **集成测试**: 测试多个组件协作
+- **API测试**: 测试HTTP接口
+- **数据库测试**: 测试数据访问层
+- **性能测试**: 测试系统性能指标
+
+## 8.3 单元测试规范
+
+### 8.3.1 测试文件命名
+```go
+// 测试文件命名规范
+// 原文件: user_service.go
+// 测试文件: user_service_test.go
+
+// 测试函数命名规范
+func TestUserService_CreateUser(t *testing.T) { }
+func TestUserService_CreateUser_WithInvalidData(t *testing.T) { }
+func TestUserService_CreateUser_WithDuplicateEmail(t *testing.T) { }
+```
+
+### 8.3.2 测试结构
+```go
+package service
+
+import (
+    "context"
+    "testing"
+    "time"
+    
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/mock"
+    "github.com/stretchr/testify/suite"
+    
+    "github.com/make-bin/server-tpl/pkg/model"
+    "github.com/make-bin/server-tpl/pkg/repository"
+)
+
+// UserServiceTestSuite 用户服务测试套件
+type UserServiceTestSuite struct {
+    suite.Suite
+    userRepo *repository.MockUserRepository
+    userSvc  *UserService
+    ctx      context.Context
+}
+
+// SetupSuite 测试套件初始化
+func (suite *UserServiceTestSuite) SetupSuite() {
+    suite.ctx = context.Background()
+}
+
+// SetupTest 每个测试用例初始化
+func (suite *UserServiceTestSuite) SetupTest() {
+    suite.userRepo = repository.NewMockUserRepository(suite.T())
+    suite.userSvc = NewUserService(suite.userRepo)
+}
+
+// TearDownTest 每个测试用例清理
+func (suite *UserServiceTestSuite) TearDownTest() {
+    suite.userRepo.AssertExpectations(suite.T())
+}
+
+// TestCreateUser_Success 测试成功创建用户
+func (suite *UserServiceTestSuite) TestCreateUser_Success() {
+    // Arrange
+    user := &model.User{
+        ID:       "user-123",
+        Email:    "test@example.com",
+        Name:     "Test User",
+        Password: "password123",
+    }
+    
+    suite.userRepo.On("Create", suite.ctx, mock.AnythingOfType("*model.User")).
+        Return(user, nil)
+    
+    // Act
+    result, err := suite.userSvc.CreateUser(suite.ctx, user)
+    
+    // Assert
+    suite.NoError(err)
+    suite.NotNil(result)
+    suite.Equal(user.ID, result.ID)
+    suite.Equal(user.Email, result.Email)
+    suite.Equal(user.Name, result.Name)
+    suite.NotEqual(user.Password, result.Password) // 密码应该被加密
+}
+
+// TestCreateUser_WithDuplicateEmail 测试创建重复邮箱用户
+func (suite *UserServiceTestSuite) TestCreateUser_WithDuplicateEmail() {
+    // Arrange
+    user := &model.User{
+        Email:    "existing@example.com",
+        Name:     "Test User",
+        Password: "password123",
+    }
+    
+    suite.userRepo.On("Create", suite.ctx, mock.AnythingOfType("*model.User")).
+        Return(nil, repository.ErrDuplicateEmail)
+    
+    // Act
+    result, err := suite.userSvc.CreateUser(suite.ctx, user)
+    
+    // Assert
+    suite.Error(err)
+    suite.Nil(result)
+    suite.Equal(repository.ErrDuplicateEmail, err)
+}
+
+// TestGetUser_Success 测试成功获取用户
+func (suite *UserServiceTestSuite) TestGetUser_Success() {
+    // Arrange
+    userID := "user-123"
+    expectedUser := &model.User{
+        ID:    userID,
+        Email: "test@example.com",
+        Name:  "Test User",
+    }
+    
+    suite.userRepo.On("GetByID", suite.ctx, userID).
+        Return(expectedUser, nil)
+    
+    // Act
+    result, err := suite.userSvc.GetUser(suite.ctx, userID)
+    
+    // Assert
+    suite.NoError(err)
+    suite.NotNil(result)
+    suite.Equal(expectedUser.ID, result.ID)
+    suite.Equal(expectedUser.Email, result.Email)
+    suite.Equal(expectedUser.Name, result.Name)
+}
+
+// TestGetUser_NotFound 测试获取不存在的用户
+func (suite *UserServiceTestSuite) TestGetUser_NotFound() {
+    // Arrange
+    userID := "non-existent"
+    
+    suite.userRepo.On("GetByID", suite.ctx, userID).
+        Return(nil, repository.ErrUserNotFound)
+    
+    // Act
+    result, err := suite.userSvc.GetUser(suite.ctx, userID)
+    
+    // Assert
+    suite.Error(err)
+    suite.Nil(result)
+    suite.Equal(repository.ErrUserNotFound, err)
+}
+
+// 运行测试套件
+func TestUserServiceTestSuite(t *testing.T) {
+    suite.Run(t, new(UserServiceTestSuite))
+}
+```
+
+### 8.3.3 测试工具和断言
+```go
+package testutils
+
+import (
+    "context"
+    "testing"
+    "time"
+    
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
+    "github.com/stretchr/testify/suite"
+)
+
+// TestUtils 测试工具
+type TestUtils struct {
+    suite.Suite
+}
+
+// AssertUserEqual 断言用户相等
+func (tu *TestUtils) AssertUserEqual(expected, actual *model.User) {
+    tu.Equal(expected.ID, actual.ID)
+    tu.Equal(expected.Email, actual.Email)
+    tu.Equal(expected.Name, actual.Name)
+    tu.Equal(expected.Status, actual.Status)
+    tu.WithinDuration(expected.CreatedAt, actual.CreatedAt, time.Second)
+    tu.WithinDuration(expected.UpdatedAt, actual.UpdatedAt, time.Second)
+}
+
+// CreateTestUser 创建测试用户
+func (tu *TestUtils) CreateTestUser() *model.User {
+    return &model.User{
+        ID:       "test-user-" + time.Now().Format("20060102150405"),
+        Email:    "test@example.com",
+        Name:     "Test User",
+        Password: "password123",
+        Status:   model.UserStatusActive,
+        CreatedAt: time.Now(),
+        UpdatedAt: time.Now(),
+    }
+}
+
+// CreateTestContext 创建测试上下文
+func (tu *TestUtils) CreateTestContext() context.Context {
+    return context.WithValue(context.Background(), "test", true)
+}
+
+// AssertErrorCode 断言错误码
+func (tu *TestUtils) AssertErrorCode(err error, expectedCode int) {
+    if businessErr, ok := err.(*bcode.Error); ok {
+        tu.Equal(expectedCode, businessErr.Code)
+    } else {
+        tu.Fail("错误不是业务错误类型")
+    }
+}
+
+// AssertHTTPStatus 断言HTTP状态码
+func (tu *TestUtils) AssertHTTPStatus(t *testing.T, recorder *httptest.ResponseRecorder, expectedStatus int) {
+    require.Equal(t, expectedStatus, recorder.Code)
+}
+
+// AssertJSONResponse 断言JSON响应
+func (tu *TestUtils) AssertJSONResponse(t *testing.T, recorder *httptest.ResponseRecorder, expected interface{}) {
+    var response map[string]interface{}
+    err := json.Unmarshal(recorder.Body.Bytes(), &response)
+    require.NoError(t, err)
+    
+    expectedBytes, err := json.Marshal(expected)
+    require.NoError(t, err)
+    
+    var expectedMap map[string]interface{}
+    err = json.Unmarshal(expectedBytes, &expectedMap)
+    require.NoError(t, err)
+    
+    assert.Equal(t, expectedMap, response)
+}
+```
+
+## 8.4 集成测试规范
+
+### 8.4.1 数据库集成测试
+```go
+package integration
+
+import (
+    "context"
+    "database/sql"
+    "testing"
+    "time"
+    
+    "github.com/stretchr/testify/suite"
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+    
+    "github.com/make-bin/server-tpl/pkg/model"
+    "github.com/make-bin/server-tpl/pkg/repository"
+    "github.com/make-bin/server-tpl/pkg/service"
+)
+
+// DatabaseTestSuite 数据库测试套件
+type DatabaseTestSuite struct {
+    suite.Suite
+    db       *gorm.DB
+    userRepo repository.UserRepository
+    userSvc  *service.UserService
+    ctx      context.Context
+}
+
+// SetupSuite 测试套件初始化
+func (suite *DatabaseTestSuite) SetupSuite() {
+    // 连接测试数据库
+    dsn := "host=localhost user=test password=test dbname=test_db port=5432 sslmode=disable"
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    suite.Require().NoError(err)
+    
+    suite.db = db
+    suite.ctx = context.Background()
+    
+    // 运行数据库迁移
+    err = suite.db.AutoMigrate(&model.User{})
+    suite.Require().NoError(err)
+}
+
+// SetupTest 每个测试用例初始化
+func (suite *DatabaseTestSuite) SetupTest() {
+    // 清理测试数据
+    suite.db.Exec("DELETE FROM users")
+    
+    // 初始化依赖
+    suite.userRepo = repository.NewUserRepository(suite.db)
+    suite.userSvc = service.NewUserService(suite.userRepo)
+}
+
+// TearDownSuite 测试套件清理
+func (suite *DatabaseTestSuite) TearDownSuite() {
+    // 清理测试数据库
+    sqlDB, err := suite.db.DB()
+    suite.Require().NoError(err)
+    sqlDB.Close()
+}
+
+// TestUserService_CreateAndGetUser 测试创建和获取用户
+func (suite *DatabaseTestSuite) TestUserService_CreateAndGetUser() {
+    // Arrange
+    user := &model.User{
+        Email:    "integration@example.com",
+        Name:     "Integration Test User",
+        Password: "password123",
+        Status:   model.UserStatusActive,
+    }
+    
+    // Act - 创建用户
+    createdUser, err := suite.userSvc.CreateUser(suite.ctx, user)
+    suite.Require().NoError(err)
+    suite.Require().NotNil(createdUser)
+    suite.Require().NotEmpty(createdUser.ID)
+    
+    // Act - 获取用户
+    retrievedUser, err := suite.userSvc.GetUser(suite.ctx, createdUser.ID)
+    
+    // Assert
+    suite.NoError(err)
+    suite.NotNil(retrievedUser)
+    suite.Equal(createdUser.ID, retrievedUser.ID)
+    suite.Equal(createdUser.Email, retrievedUser.Email)
+    suite.Equal(createdUser.Name, retrievedUser.Name)
+    suite.NotEqual(user.Password, retrievedUser.Password) // 密码应该被加密
+}
+
+// TestUserService_UpdateUser 测试更新用户
+func (suite *DatabaseTestSuite) TestUserService_UpdateUser() {
+    // Arrange
+    user := &model.User{
+        Email:    "update@example.com",
+        Name:     "Update Test User",
+        Password: "password123",
+        Status:   model.UserStatusActive,
+    }
+    
+    createdUser, err := suite.userSvc.CreateUser(suite.ctx, user)
+    suite.Require().NoError(err)
+    
+    // Act
+    updateData := &model.User{
+        Name:   "Updated Name",
+        Status: model.UserStatusInactive,
+    }
+    
+    updatedUser, err := suite.userSvc.UpdateUser(suite.ctx, createdUser.ID, updateData)
+    
+    // Assert
+    suite.NoError(err)
+    suite.NotNil(updatedUser)
+    suite.Equal(createdUser.ID, updatedUser.ID)
+    suite.Equal(createdUser.Email, updatedUser.Email) // 邮箱不应该被更新
+    suite.Equal(updateData.Name, updatedUser.Name)
+    suite.Equal(updateData.Status, updatedUser.Status)
+}
+
+// TestUserService_DeleteUser 测试删除用户
+func (suite *DatabaseTestSuite) TestUserService_DeleteUser() {
+    // Arrange
+    user := &model.User{
+        Email:    "delete@example.com",
+        Name:     "Delete Test User",
+        Password: "password123",
+        Status:   model.UserStatusActive,
+    }
+    
+    createdUser, err := suite.userSvc.CreateUser(suite.ctx, user)
+    suite.Require().NoError(err)
+    
+    // Act
+    err = suite.userSvc.DeleteUser(suite.ctx, createdUser.ID)
+    
+    // Assert
+    suite.NoError(err)
+    
+    // 验证用户已被删除
+    _, err = suite.userSvc.GetUser(suite.ctx, createdUser.ID)
+    suite.Error(err)
+    suite.Equal(repository.ErrUserNotFound, err)
+}
+
+// 运行测试套件
+func TestDatabaseTestSuite(t *testing.T) {
+    suite.Run(t, new(DatabaseTestSuite))
+}
+```
+
+### 8.4.2 API集成测试
+```go
+package api
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+    
+    "github.com/gin-gonic/gin"
+    "github.com/stretchr/testify/suite"
+    
+    "github.com/make-bin/server-tpl/pkg/api"
+    "github.com/make-bin/server-tpl/pkg/model"
+    "github.com/make-bin/server-tpl/pkg/service"
+)
+
+// APITestSuite API测试套件
+type APITestSuite struct {
+    suite.Suite
+    router *gin.Engine
+    userSvc *service.UserService
+}
+
+// SetupSuite 测试套件初始化
+func (suite *APITestSuite) SetupSuite() {
+    // 设置Gin为测试模式
+    gin.SetMode(gin.TestMode)
+    
+    // 初始化路由
+    suite.router = gin.New()
+    suite.userSvc = service.NewUserService(nil) // 使用Mock
+    
+    // 注册路由
+    userController := api.NewUserController(suite.userSvc)
+    api.RegisterRoutes(suite.router, userController)
+}
+
+// TestCreateUser_Success 测试成功创建用户API
+func (suite *APITestSuite) TestCreateUser_Success() {
+    // Arrange
+    requestBody := map[string]interface{}{
+        "email":    "api@example.com",
+        "name":     "API Test User",
+        "password": "password123",
+    }
+    
+    requestBytes, err := json.Marshal(requestBody)
+    suite.Require().NoError(err)
+    
+    req, err := http.NewRequest("POST", "/api/v1/users", bytes.NewBuffer(requestBytes))
+    suite.Require().NoError(err)
+    req.Header.Set("Content-Type", "application/json")
+    
+    recorder := httptest.NewRecorder()
+    
+    // Act
+    suite.router.ServeHTTP(recorder, req)
+    
+    // Assert
+    suite.Equal(http.StatusCreated, recorder.Code)
+    
+    var response map[string]interface{}
+    err = json.Unmarshal(recorder.Body.Bytes(), &response)
+    suite.NoError(err)
+    
+    suite.NotEmpty(response["id"])
+    suite.Equal(requestBody["email"], response["email"])
+    suite.Equal(requestBody["name"], response["name"])
+    suite.NotEqual(requestBody["password"], response["password"]) // 密码不应该返回
+}
+
+// TestCreateUser_InvalidData 测试创建用户API - 无效数据
+func (suite *APITestSuite) TestCreateUser_InvalidData() {
+    // Arrange
+    requestBody := map[string]interface{}{
+        "email": "invalid-email", // 无效邮箱
+        "name":  "Test User",
+    }
+    
+    requestBytes, err := json.Marshal(requestBody)
+    suite.Require().NoError(err)
+    
+    req, err := http.NewRequest("POST", "/api/v1/users", bytes.NewBuffer(requestBytes))
+    suite.Require().NoError(err)
+    req.Header.Set("Content-Type", "application/json")
+    
+    recorder := httptest.NewRecorder()
+    
+    // Act
+    suite.router.ServeHTTP(recorder, req)
+    
+    // Assert
+    suite.Equal(http.StatusBadRequest, recorder.Code)
+    
+    var response map[string]interface{}
+    err = json.Unmarshal(recorder.Body.Bytes(), &response)
+    suite.NoError(err)
+    
+    suite.Equal("validation_error", response["error"])
+}
+
+// TestGetUser_Success 测试成功获取用户API
+func (suite *APITestSuite) TestGetUser_Success() {
+    // Arrange
+    userID := "test-user-123"
+    req, err := http.NewRequest("GET", "/api/v1/users/"+userID, nil)
+    suite.Require().NoError(err)
+    
+    recorder := httptest.NewRecorder()
+    
+    // Act
+    suite.router.ServeHTTP(recorder, req)
+    
+    // Assert
+    suite.Equal(http.StatusOK, recorder.Code)
+    
+    var response map[string]interface{}
+    err = json.Unmarshal(recorder.Body.Bytes(), &response)
+    suite.NoError(err)
+    
+    suite.Equal(userID, response["id"])
+}
+
+// TestGetUser_NotFound 测试获取用户API - 用户不存在
+func (suite *APITestSuite) TestGetUser_NotFound() {
+    // Arrange
+    userID := "non-existent-user"
+    req, err := http.NewRequest("GET", "/api/v1/users/"+userID, nil)
+    suite.Require().NoError(err)
+    
+    recorder := httptest.NewRecorder()
+    
+    // Act
+    suite.router.ServeHTTP(recorder, req)
+    
+    // Assert
+    suite.Equal(http.StatusNotFound, recorder.Code)
+    
+    var response map[string]interface{}
+    err = json.Unmarshal(recorder.Body.Bytes(), &response)
+    suite.NoError(err)
+    
+    suite.Equal("user_not_found", response["error"])
+}
+
+// 运行测试套件
+func TestAPITestSuite(t *testing.T) {
+    suite.Run(t, new(APITestSuite))
+}
+```
+
+## 8.5 测试覆盖率要求
+
+### 8.5.1 覆盖率目标
+```go
+// 覆盖率要求
+// 单元测试覆盖率: >= 80%
+// 集成测试覆盖率: >= 70%
+// 总体测试覆盖率: >= 75%
+
+// 生成覆盖率报告
+func TestMain(m *testing.M) {
+    // 运行测试并生成覆盖率报告
+    result := m.Run()
+    
+    // 检查覆盖率
+    if testing.CoverMode() != "" {
+        coverage := testing.Coverage()
+        if coverage < 0.75 {
+            log.Fatalf("测试覆盖率不足: %.2f%%, 要求 >= 75%%", coverage*100)
+        }
+    }
+    
+    os.Exit(result)
+}
+```
+
+### 8.5.2 覆盖率检查脚本
+```bash
+#!/bin/bash
+# scripts/test-coverage.sh
+
+set -e
+
+echo "运行单元测试..."
+go test -v -race -coverprofile=coverage.out ./...
+
+echo "生成覆盖率报告..."
+go tool cover -func=coverage.out
+
+echo "生成HTML覆盖率报告..."
+go tool cover -html=coverage.out -o coverage.html
+
+echo "检查覆盖率..."
+COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+
+if (( $(echo "$COVERAGE < 75" | bc -l) )); then
+    echo "❌ 测试覆盖率不足: ${COVERAGE}%, 要求 >= 75%"
+    exit 1
+else
+    echo "✅ 测试覆盖率达标: ${COVERAGE}%"
+fi
+
+echo "清理覆盖率文件..."
+rm -f coverage.out coverage.html
+```
+
+## 8.6 测试工具和框架
+
+### 8.6.1 测试依赖管理
+```go
+// go.mod 测试依赖
+require (
+    github.com/stretchr/testify v1.8.4
+    github.com/golang/mock v1.6.0
+    gopkg.in/go-playground/assert.v1 v1.2.1
+)
+
+// 生成Mock
+//go:generate mockgen -source=pkg/repository/user_repository.go -destination=pkg/repository/mock_user_repository.go -package=repository
+```
+
+### 8.6.2 测试数据管理
+```go
+package testdata
+
+import (
+    "github.com/make-bin/server-tpl/pkg/model"
+)
+
+// TestUsers 测试用户数据
+var TestUsers = []*model.User{
+    {
+        ID:       "user-1",
+        Email:    "user1@example.com",
+        Name:     "User One",
+        Password: "password123",
+        Status:   model.UserStatusActive,
+    },
+    {
+        ID:       "user-2",
+        Email:    "user2@example.com",
+        Name:     "User Two",
+        Password: "password456",
+        Status:   model.UserStatusInactive,
+    },
+}
+
+// TestApplications 测试应用数据
+var TestApplications = []*model.Application{
+    {
+        ID:          "app-1",
+        Name:        "Test App 1",
+        Description: "Test application 1",
+        Status:      model.AppStatusActive,
+    },
+    {
+        ID:          "app-2",
+        Name:        "Test App 2",
+        Description: "Test application 2",
+        Status:      model.AppStatusInactive,
+    },
+}
+```
+
+### 8.6.3 测试环境配置
+```go
+package testconfig
+
+import (
+    "os"
+    "testing"
+)
+
+// TestConfig 测试配置
+type TestConfig struct {
+    DatabaseURL string
+    RedisURL    string
+    LogLevel    string
+}
+
+// LoadTestConfig 加载测试配置
+func LoadTestConfig(t *testing.T) *TestConfig {
+    config := &TestConfig{
+        DatabaseURL: getEnvOrDefault("TEST_DATABASE_URL", "postgres://test:test@localhost:5432/test_db?sslmode=disable"),
+        RedisURL:    getEnvOrDefault("TEST_REDIS_URL", "redis://localhost:6379/1"),
+        LogLevel:    getEnvOrDefault("TEST_LOG_LEVEL", "error"),
+    }
+    
+    return config
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return defaultValue
+}
+```
+
+## 8.7 性能测试规范
+
+### 8.7.1 基准测试
+```go
+package benchmark
+
+import (
+    "context"
+    "testing"
+    
+    "github.com/make-bin/server-tpl/pkg/service"
+)
+
+// BenchmarkUserService_CreateUser 用户创建基准测试
+func BenchmarkUserService_CreateUser(b *testing.B) {
+    userSvc := service.NewUserService(nil)
+    ctx := context.Background()
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        user := &model.User{
+            Email:    "benchmark@example.com",
+            Name:     "Benchmark User",
+            Password: "password123",
+        }
+        
+        _, err := userSvc.CreateUser(ctx, user)
+        if err != nil {
+            b.Fatal(err)
+        }
+    }
+}
+
+// BenchmarkUserService_GetUser 用户获取基准测试
+func BenchmarkUserService_GetUser(b *testing.B) {
+    userSvc := service.NewUserService(nil)
+    ctx := context.Background()
+    userID := "benchmark-user"
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        _, err := userSvc.GetUser(ctx, userID)
+        if err != nil {
+            b.Fatal(err)
+        }
+    }
+}
+```
+
+### 8.7.2 负载测试
+```go
+package loadtest
+
+import (
+    "net/http"
+    "net/http/httptest"
+    "testing"
+    "time"
+    
+    "github.com/stretchr/testify/require"
+)
+
+// LoadTestConfig 负载测试配置
+type LoadTestConfig struct {
+    Concurrency int
+    Duration    time.Duration
+    RPS         int // 每秒请求数
+}
+
+// RunLoadTest 运行负载测试
+func RunLoadTest(t *testing.T, config LoadTestConfig, handler http.HandlerFunc) {
+    server := httptest.NewServer(handler)
+    defer server.Close()
+    
+    client := &http.Client{
+        Timeout: 30 * time.Second,
+    }
+    
+    // 创建请求
+    req, err := http.NewRequest("GET", server.URL+"/api/v1/users", nil)
+    require.NoError(t, err)
+    
+    // 运行负载测试
+    start := time.Now()
+    results := make(chan *http.Response, config.Concurrency)
+    errors := make(chan error, config.Concurrency)
+    
+    // 启动工作协程
+    for i := 0; i < config.Concurrency; i++ {
+        go func() {
+            for time.Since(start) < config.Duration {
+                resp, err := client.Do(req)
+                if err != nil {
+                    errors <- err
+                    continue
+                }
+                results <- resp
+                time.Sleep(time.Second / time.Duration(config.RPS/config.Concurrency))
+            }
+        }()
+    }
+    
+    // 收集结果
+    var successCount, errorCount int
+    timeout := time.After(config.Duration + time.Second)
+    
+    for {
+        select {
+        case <-results:
+            successCount++
+        case <-errors:
+            errorCount++
+        case <-timeout:
+            goto done
+        }
+    }
+    
+done:
+    t.Logf("负载测试结果: 成功=%d, 错误=%d, 总请求=%d", 
+        successCount, errorCount, successCount+errorCount)
+}
+```
+
+## 8.8 测试最佳实践
+
+### 8.8.1 测试编写原则
+- **AAA模式**: Arrange（准备）、Act（执行）、Assert（断言）
+- **单一职责**: 每个测试只测试一个功能点
+- **独立性**: 测试之间不应该相互依赖
+- **可读性**: 测试代码应该清晰易懂
+- **可维护性**: 测试代码应该易于维护和修改
+
+### 8.8.2 测试数据管理
+- **测试数据隔离**: 每个测试使用独立的测试数据
+- **数据清理**: 测试完成后清理测试数据
+- **测试数据工厂**: 使用工厂模式创建测试数据
+- **测试数据文件**: 复杂测试数据使用外部文件
+
+### 8.8.3 测试性能优化
+- **并行测试**: 使用 `t.Parallel()` 并行运行测试
+- **测试缓存**: 缓存测试结果避免重复计算
+- **资源复用**: 复用测试资源减少初始化开销
+- **测试超时**: 设置合理的测试超时时间
+
+### 8.8.4 测试环境管理
+- **环境隔离**: 测试环境与生产环境隔离
+- **配置管理**: 使用专门的测试配置
+- **依赖管理**: 管理测试依赖的版本
+- **CI/CD集成**: 在CI/CD流程中运行测试
+
+## 8.9 测试工具和脚本
+
+### 8.9.1 Makefile测试命令
+```makefile
+# Makefile
+.PHONY: test test-unit test-integration test-coverage test-benchmark
+
+# 运行所有测试
+test:
+	go test -v -race ./...
+
+# 运行单元测试
+test-unit:
+	go test -v -race -tags=unit ./...
+
+# 运行集成测试
+test-integration:
+	go test -v -race -tags=integration ./...
+
+# 运行测试并生成覆盖率报告
+test-coverage:
+	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out
+	go tool cover -html=coverage.out -o coverage.html
+
+# 运行基准测试
+test-benchmark:
+	go test -v -bench=. -benchmem ./...
+
+# 运行负载测试
+test-load:
+	go test -v -tags=loadtest ./...
+
+# 清理测试文件
+test-clean:
+	rm -f coverage.out coverage.html
+```
+
+### 8.9.2 测试脚本
+```bash
+#!/bin/bash
+# scripts/run-tests.sh
+
+set -e
+
+echo "🔍 运行代码检查..."
+golangci-lint run
+
+echo "🧪 运行单元测试..."
+go test -v -race -tags=unit ./...
+
+echo "🔗 运行集成测试..."
+go test -v -race -tags=integration ./...
+
+echo "📊 生成覆盖率报告..."
+go test -v -race -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+go tool cover -html=coverage.out -o coverage.html
+
+echo "⚡ 运行基准测试..."
+go test -v -bench=. -benchmem ./...
+
+echo "✅ 所有测试通过!"
+```
+
+### 8.9.3 测试报告生成
+```go
+package testreport
+
+import (
+    "encoding/json"
+    "os"
+    "time"
+)
+
+// TestReport 测试报告
+type TestReport struct {
+    Timestamp   time.Time     `json:"timestamp"`
+    TotalTests  int           `json:"total_tests"`
+    PassedTests int           `json:"passed_tests"`
+    FailedTests int           `json:"failed_tests"`
+    Coverage    float64       `json:"coverage"`
+    Duration    time.Duration `json:"duration"`
+    Errors      []string      `json:"errors,omitempty"`
+}
+
+// GenerateReport 生成测试报告
+func GenerateReport(report *TestReport, filename string) error {
+    file, err := os.Create(filename)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+    
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+    return encoder.Encode(report)
+}
+```
+description:
+globs:
+alwaysApply: false
+---
