@@ -1,0 +1,569 @@
+# 6. 日志管理规范
+
+## 6.1 概述
+
+本规范定义了Go HTTP Server项目的日志管理标准，包括日志级别、格式规范、输出配置、结构化日志和最佳实践。
+
+## 6.2 日志架构
+
+### 6.2.1 日志级别
+```
+日志级别（从低到高）：
+1. TRACE - 详细的调试信息
+2. DEBUG - 调试信息
+3. INFO - 一般信息
+4. WARN - 警告信息
+5. ERROR - 错误信息
+6. FATAL - 致命错误
+7. PANIC - 系统崩溃
+```
+
+### 6.2.2 日志组件
+- **日志记录器**: 负责记录日志
+- **日志格式化器**: 负责格式化日志输出
+- **日志输出器**: 负责输出到不同目标
+- **日志轮转**: 负责日志文件管理
+
+## 6.3 日志配置
+
+### 6.3.1 日志配置结构
+```go
+type LogConfig struct {
+    Level      string `mapstructure:"level"`
+    Format     string `mapstructure:"format"`      // json, text
+    Output     string `mapstructure:"output"`      // stdout, file, both
+    FilePath   string `mapstructure:"file_path"`
+    MaxSize    int    `mapstructure:"max_size"`    // MB
+    MaxBackups int    `mapstructure:"max_backups"`
+    MaxAge     int    `mapstructure:"max_age"`     // days
+    Compress   bool   `mapstructure:"compress"`
+    
+    // 结构化日志配置
+    Fields map[string]interface{} `mapstructure:"fields"`
+    
+    // 性能配置
+    BufferSize int `mapstructure:"buffer_size"`
+    Async      bool `mapstructure:"async"`
+}
+```
+
+### 6.3.2 配置文件示例
+```yaml
+# configs/config.yaml
+log:
+  level: "info"
+  format: "json"
+  output: "both"
+  file_path: "logs/app.log"
+  max_size: 100
+  max_backups: 3
+  max_age: 28
+  compress: true
+  fields:
+    service: "go-http-server"
+    version: "1.0.0"
+    environment: "production"
+  buffer_size: 1024
+  async: true
+```
+
+## 6.4 日志实现
+
+### 6.4.1 日志管理器
+```go
+package logger
+
+import (
+    "context"
+    "fmt"
+    "os"
+    "path/filepath"
+    "time"
+    
+    "github.com/sirupsen/logrus"
+    "gopkg.in/natefinch/lumberjack.v2"
+)
+
+type Manager struct {
+    logger *logrus.Logger
+    config *LogConfig
+}
+
+func NewManager(config *LogConfig) (*Manager, error) {
+    logger := logrus.New()
+    
+    // 设置日志级别
+    level, err := logrus.ParseLevel(config.Level)
+    if err != nil {
+        return nil, fmt.Errorf("解析日志级别失败: %w", err)
+    }
+    logger.SetLevel(level)
+    
+    // 设置日志格式
+    if err := setLogFormat(logger, config.Format); err != nil {
+        return nil, err
+    }
+    
+    // 设置日志输出
+    if err := setLogOutput(logger, config); err != nil {
+        return nil, err
+    }
+    
+    // 设置默认字段
+    if config.Fields != nil {
+        logger.AddHook(&DefaultFieldsHook{fields: config.Fields})
+    }
+    
+    // 设置异步日志
+    if config.Async {
+        logger.SetOutput(&AsyncWriter{
+            writer: logger.Out,
+            buffer: make(chan []byte, config.BufferSize),
+        })
+    }
+    
+    return &Manager{
+        logger: logger,
+        config: config,
+    }, nil
+}
+
+// setLogFormat 设置日志格式
+func setLogFormat(logger *logrus.Logger, format string) error {
+    switch format {
+    case "json":
+        logger.SetFormatter(&logrus.JSONFormatter{
+            TimestampFormat: time.RFC3339,
+            FieldMap: logrus.FieldMap{
+                logrus.FieldKeyTime:  "timestamp",
+                logrus.FieldKeyLevel: "level",
+                logrus.FieldKeyMsg:   "message",
+                logrus.FieldKeyFunc:  "function",
+                logrus.FieldKeyFile:  "file",
+            },
+        })
+    case "text":
+        logger.SetFormatter(&logrus.TextFormatter{
+            TimestampFormat: time.RFC3339,
+            FullTimestamp:   true,
+            ForceColors:     true,
+        })
+    default:
+        return fmt.Errorf("不支持的日志格式: %s", format)
+    }
+    return nil
+}
+
+// setLogOutput 设置日志输出
+func setLogOutput(logger *logrus.Logger, config *LogConfig) error {
+    var outputs []io.Writer
+    
+    // 添加标准输出
+    if config.Output == "stdout" || config.Output == "both" {
+        outputs = append(outputs, os.Stdout)
+    }
+    
+    // 添加文件输出
+    if config.Output == "file" || config.Output == "both" {
+        if err := os.MkdirAll(filepath.Dir(config.FilePath), 0755); err != nil {
+            return fmt.Errorf("创建日志目录失败: %w", err)
+        }
+        
+        fileWriter := &lumberjack.Logger{
+            Filename:   config.FilePath,
+            MaxSize:    config.MaxSize,
+            MaxBackups: config.MaxBackups,
+            MaxAge:     config.MaxAge,
+            Compress:   config.Compress,
+        }
+        outputs = append(outputs, fileWriter)
+    }
+    
+    if len(outputs) == 0 {
+        return fmt.Errorf("未配置有效的日志输出")
+    }
+    
+    if len(outputs) == 1 {
+        logger.SetOutput(outputs[0])
+    } else {
+        logger.SetOutput(io.MultiWriter(outputs...))
+    }
+    
+    return nil
+}
+
+// GetLogger 获取日志记录器
+func (m *Manager) GetLogger() *logrus.Logger {
+    return m.logger
+}
+
+// WithContext 创建带上下文的日志记录器
+func (m *Manager) WithContext(ctx context.Context) *logrus.Entry {
+    return m.logger.WithContext(ctx)
+}
+
+// WithFields 创建带字段的日志记录器
+func (m *Manager) WithFields(fields logrus.Fields) *logrus.Entry {
+    return m.logger.WithFields(fields)
+}
+```
+
+### 6.4.2 默认字段钩子
+```go
+// DefaultFieldsHook 默认字段钩子
+type DefaultFieldsHook struct {
+    fields logrus.Fields
+}
+
+func (h *DefaultFieldsHook) Levels() []logrus.Level {
+    return logrus.AllLevels
+}
+
+func (h *DefaultFieldsHook) Fire(entry *logrus.Entry) error {
+    for key, value := range h.fields {
+        entry.Data[key] = value
+    }
+    return nil
+}
+```
+
+### 6.4.3 异步日志写入器
+```go
+// AsyncWriter 异步日志写入器
+type AsyncWriter struct {
+    writer io.Writer
+    buffer chan []byte
+}
+
+func (w *AsyncWriter) Write(p []byte) (n int, err error) {
+    // 复制数据以避免竞态条件
+    data := make([]byte, len(p))
+    copy(data, p)
+    
+    select {
+    case w.buffer <- data:
+        return len(p), nil
+    default:
+        // 缓冲区满，丢弃日志
+        return len(p), nil
+    }
+}
+
+func (w *AsyncWriter) start() {
+    go func() {
+        for data := range w.buffer {
+            w.writer.Write(data)
+        }
+    }()
+}
+```
+
+## 6.5 结构化日志
+
+### 6.5.1 日志字段规范
+```go
+// 标准日志字段
+const (
+    // 请求相关字段
+    FieldRequestID    = "request_id"
+    FieldUserID       = "user_id"
+    FieldIP           = "ip"
+    FieldUserAgent    = "user_agent"
+    FieldMethod       = "method"
+    FieldPath         = "path"
+    FieldStatusCode   = "status_code"
+    FieldResponseTime = "response_time"
+    
+    // 业务相关字段
+    FieldOperation    = "operation"
+    FieldResource     = "resource"
+    FieldResourceID   = "resource_id"
+    FieldAction       = "action"
+    
+    // 错误相关字段
+    FieldError        = "error"
+    FieldErrorCode    = "error_code"
+    FieldErrorType    = "error_type"
+    FieldStackTrace   = "stack_trace"
+    
+    // 系统相关字段
+    FieldService      = "service"
+    FieldVersion      = "version"
+    FieldEnvironment  = "environment"
+    FieldHost         = "host"
+    FieldPID          = "pid"
+)
+```
+
+### 6.5.2 日志记录示例
+```go
+// HTTP请求日志
+func logHTTPRequest(ctx context.Context, req *http.Request, statusCode int, duration time.Duration) {
+    logger := GetLogger().WithContext(ctx).WithFields(logrus.Fields{
+        FieldRequestID:    ctx.Value("request_id"),
+        FieldMethod:       req.Method,
+        FieldPath:         req.URL.Path,
+        FieldIP:           getClientIP(req),
+        FieldUserAgent:    req.UserAgent(),
+        FieldStatusCode:   statusCode,
+        FieldResponseTime: duration.Milliseconds(),
+    })
+    
+    if statusCode >= 400 {
+        logger.Error("HTTP请求失败")
+    } else {
+        logger.Info("HTTP请求完成")
+    }
+}
+
+// 业务操作日志
+func logBusinessOperation(ctx context.Context, operation, resource string, resourceID interface{}, err error) {
+    fields := logrus.Fields{
+        FieldOperation:  operation,
+        FieldResource:   resource,
+        FieldResourceID: resourceID,
+    }
+    
+    if err != nil {
+        fields[FieldError] = err.Error()
+        fields[FieldErrorType] = getErrorType(err)
+    }
+    
+    logger := GetLogger().WithContext(ctx).WithFields(fields)
+    
+    if err != nil {
+        logger.Error("业务操作失败")
+    } else {
+        logger.Info("业务操作成功")
+    }
+}
+
+// 数据库操作日志
+func logDatabaseOperation(ctx context.Context, operation, table string, duration time.Duration, err error) {
+    fields := logrus.Fields{
+        FieldOperation: operation,
+        FieldResource:  "database",
+        "table":        table,
+        "duration":     duration.Milliseconds(),
+    }
+    
+    if err != nil {
+        fields[FieldError] = err.Error()
+    }
+    
+    logger := GetLogger().WithContext(ctx).WithFields(fields)
+    
+    if err != nil {
+        logger.Error("数据库操作失败")
+    } else {
+        logger.Debug("数据库操作完成")
+    }
+}
+```
+
+## 6.6 日志中间件
+
+### 6.6.1 HTTP日志中间件
+```go
+package middleware
+
+import (
+    "context"
+    "net/http"
+    "time"
+    
+    "github.com/gin-gonic/gin"
+    "github.com/google/uuid"
+    "github.com/make-bin/server-tpl/pkg/logger"
+)
+
+// Logger HTTP日志中间件
+func Logger() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        start := time.Now()
+        
+        // 生成请求ID
+        requestID := uuid.New().String()
+        ctx := context.WithValue(c.Request.Context(), "request_id", requestID)
+        c.Request = c.Request.WithContext(ctx)
+        
+        // 设置请求ID到响应头
+        c.Header("X-Request-ID", requestID)
+        
+        // 处理请求
+        c.Next()
+        
+        // 记录请求日志
+        duration := time.Since(start)
+        statusCode := c.Writer.Status()
+        
+        logHTTPRequest(ctx, c.Request, statusCode, duration)
+    }
+}
+
+// logHTTPRequest 记录HTTP请求日志
+func logHTTPRequest(ctx context.Context, req *http.Request, statusCode int, duration time.Duration) {
+    log := logger.GetLogger().WithContext(ctx).WithFields(logrus.Fields{
+        "request_id":    ctx.Value("request_id"),
+        "method":        req.Method,
+        "path":          req.URL.Path,
+        "query":         req.URL.RawQuery,
+        "ip":            getClientIP(req),
+        "user_agent":    req.UserAgent(),
+        "status_code":   statusCode,
+        "response_time": duration.Milliseconds(),
+        "content_length": req.ContentLength,
+    })
+    
+    switch {
+    case statusCode >= 500:
+        log.Error("HTTP请求服务器错误")
+    case statusCode >= 400:
+        log.Warn("HTTP请求客户端错误")
+    default:
+        log.Info("HTTP请求成功")
+    }
+}
+
+// getClientIP 获取客户端IP
+func getClientIP(req *http.Request) string {
+    if ip := req.Header.Get("X-Forwarded-For"); ip != "" {
+        return ip
+    }
+    if ip := req.Header.Get("X-Real-IP"); ip != "" {
+        return ip
+    }
+    return req.RemoteAddr
+}
+```
+
+### 6.6.2 错误日志中间件
+```go
+// ErrorLogger 错误日志中间件
+func ErrorLogger() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        c.Next()
+        
+        // 检查是否有错误
+        if len(c.Errors) > 0 {
+            for _, err := range c.Errors {
+                log := logger.GetLogger().WithContext(c.Request.Context()).WithFields(logrus.Fields{
+                    "request_id": c.Request.Context().Value("request_id"),
+                    "error":      err.Error(),
+                    "error_type": getErrorType(err.Err),
+                })
+                log.Error("请求处理错误")
+            }
+        }
+    }
+}
+```
+
+## 6.7 日志最佳实践
+
+### 6.7.1 日志级别使用
+- **TRACE**: 详细的调试信息，仅在开发环境使用
+- **DEBUG**: 调试信息，用于问题排查
+- **INFO**: 一般信息，记录重要的业务操作
+- **WARN**: 警告信息，记录可能的问题
+- **ERROR**: 错误信息，记录错误但不影响系统运行
+- **FATAL**: 致命错误，记录后程序退出
+- **PANIC**: 系统崩溃，记录后程序崩溃
+
+### 6.7.2 日志内容规范
+- **简洁明了**: 日志消息应该简洁明了
+- **结构化**: 使用结构化字段而不是字符串拼接
+- **上下文**: 包含足够的上下文信息
+- **敏感信息**: 不要记录敏感信息（密码、令牌等）
+- **性能考虑**: 避免在日志中执行昂贵的操作
+
+### 6.7.3 日志性能优化
+- **异步日志**: 使用异步日志避免阻塞主线程
+- **缓冲写入**: 使用缓冲写入减少I/O操作
+- **级别过滤**: 在生产环境中使用较高的日志级别
+- **采样日志**: 对高频日志进行采样
+
+### 6.7.4 日志管理
+- **日志轮转**: 配置日志文件轮转避免磁盘空间不足
+- **日志压缩**: 对旧日志进行压缩节省存储空间
+- **日志清理**: 定期清理过期的日志文件
+- **监控告警**: 监控日志文件大小和错误率
+
+## 6.8 日志工具
+
+### 6.8.1 日志分析工具
+```go
+// LogAnalyzer 日志分析器
+type LogAnalyzer struct {
+    logFile string
+}
+
+func (la *LogAnalyzer) AnalyzeErrors() ([]ErrorSummary, error) {
+    // 分析错误日志
+    return nil, nil
+}
+
+func (la *LogAnalyzer) AnalyzePerformance() ([]PerformanceSummary, error) {
+    // 分析性能日志
+    return nil, nil
+}
+
+type ErrorSummary struct {
+    ErrorType    string `json:"error_type"`
+    Count        int    `json:"count"`
+    LastOccurred string `json:"last_occurred"`
+}
+
+type PerformanceSummary struct {
+    Endpoint     string  `json:"endpoint"`
+    AvgResponse  float64 `json:"avg_response"`
+    MaxResponse  float64 `json:"max_response"`
+    RequestCount int     `json:"request_count"`
+}
+```
+
+### 6.8.2 日志监控
+```go
+// LogMonitor 日志监控器
+type LogMonitor struct {
+    logger *logrus.Logger
+    metrics map[string]int64
+}
+
+func (lm *LogMonitor) MonitorErrorRate() {
+    // 监控错误率
+}
+
+func (lm *LogMonitor) MonitorLogFileSize() {
+    // 监控日志文件大小
+}
+
+func (lm *LogMonitor) AlertOnHighErrorRate() {
+    // 高错误率告警
+}
+```
+
+## 6.9 日志集成
+
+### 6.9.1 与监控系统集成
+```go
+// 将日志指标集成到Prometheus
+func registerLogMetrics() {
+    // 错误日志计数
+    prometheus.NewCounterVec(prometheus.CounterOpts{
+        Name: "log_errors_total",
+        Help: "Total number of error logs",
+    }, []string{"service", "level"}).Inc()
+    
+    // 日志文件大小
+    prometheus.NewGaugeVec(prometheus.GaugeOpts{
+        Name: "log_file_size_bytes",
+        Help: "Size of log files in bytes",
+    }, []string{"file"}).Set(float64(getLogFileSize()))
+}
+```
+
+description:
+globs:
+alwaysApply: false
+---

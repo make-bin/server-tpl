@@ -1,42 +1,110 @@
 # Go HTTP Server 项目规则
 
-## 📋 文档目录索引
+## 📋 项目概述
 
-本项目规则文档已按章节拆分为独立的文件，便于维护和阅读：
+本项目是一个基于 Go 语言的 HTTP 服务器模板，采用现代化的架构设计和最佳实践。
 
-### 📁 章节文件列表
+## 📚 项目规则文档
 
-1. **[项目结构](./01-project-structure.md)** - 项目整体架构和目录结构
-2. **[技术栈规范](./02-tech-stack.md)** - 使用的技术栈和工具
-3. **[国际化与本地化（i18n/L10n）](./03-i18n-localization.md)** - 多语言支持
-4. **[依赖管理规范](./04-dependency-management.md)** - 依赖管理策略
-5. **[分层架构设计](./05-layered-architecture.md)** - 系统架构设计
-6. **[存储架构设计](./06-storage-architecture.md)** - 数据存储设计
-7. **[依赖注入容器实现](./07-dependency-injection.md)** - DI容器实现
-8. **[开发最佳实践](./08-development-best-practices.md)** - 开发规范和最佳实践
-9. **[部署和运维](./09-deployment-operations.md)** - 部署和运维指南
-10. **[Prometheus 监控规范](./10-prometheus-monitoring.md)** - 监控系统规范
-11. **[编译和运行](./11-compilation-running.md)** - 构建和运行指南
-12. **[Go PProf 调试规范](./12-go-pprof-debugging.md)** - 性能调试工具
+本项目规则文档已按章节拆分为独立的文件，便于维护和阅读。以下是完整的项目规则内容：
+
+---
+
+## 1. 项目结构
+
+@.cursor/rules/01-project-structure.mdc
+
+---
+
+## 2. API 设计规范
+
+@.cursor/rules/02-api-specification.mdc
+
+---
+
+## 3. 依赖注入容器实现
+
+@.cursor/rules/03-dependency-injection.mdc
+
+---
+
+## 4. 开发最佳实践
+
+@.cursor/rules/04-development-best-practices.mdc
+
+---
+
+## 5. 配置管理规范
+
+@.cursor/rules/05-config-management.mdc
+
+---
+
+## 6. 日志管理规范
+
+@.cursor/rules/06-log-management.mdc
+
+---
+
+## 7. 错误处理规范
+
+@.cursor/rules/07-error-handling.mdc
+
+---
+
+## 8. 存储架构设计
+
+@.cursor/rules/08-storage-architecture.mdc
+
+---
+
+## 9. Prometheus 监控规范
+
+@.cursor/rules/09-prometheus-monitoring.mdc
+
+---
+
+## 10. 编译和运行
+
+@.cursor/rules/10-compilation-running.mdc
+
+---
+
+## 11. Go PProf 调试规范
+
+@.cursor/rules/11-go-pprof-debugging.mdc
+
+---
+
+## 12. 部署和运维
+
+@.cursor/rules/12-deployment-operations.mdc
+
+---
+
+## 🔄 文档维护说明
+
+- 各章节内容独立维护在对应的 `.mdc` 文件中
+- 主文件 `project.mdc` 使用 Cursor `@` 语法引用各章节内容
+- 修改某个章节时，只需编辑对应的章节文件
+- Cursor 编辑器会自动解析 `@` 语法并显示完整内容
 
 ---
 
 ## 📖 快速导航
 
-点击上述链接可直接跳转到对应的章节文件。每个章节文件都是独立的，包含完整的相关内容。
+如需单独查看某个章节，可访问以下文件：
 
-## 🔄 文档维护
-
-- 各章节内容独立维护，互不影响
-- 修改某个章节时，只需编辑对应的 `.md` 文件
-- 主文件 `project.mdc` 仅作为导航和索引使用
-- 建议使用支持 Markdown 的编辑器查看各章节文件
-
----
-
-## 📚 完整章节内容
-
-以下是各章节的详细内容，点击链接查看：
-
-> **注意**: 所有章节内容已拆分到独立的 `.md` 文件中，请点击上方链接查看具体内容。
+- [项目结构](./01-project-structure.mdc)
+- [API 设计规范](./02-api-specification.mdc)
+- [依赖注入容器实现](./03-dependency-injection.mdc)
+- [开发最佳实践](./04-development-best-practices.mdc)
+- [配置管理规范](./05-config-management.mdc)
+- [日志管理规范](./06-log-management.mdc)
+- [错误处理规范](./07-error-handling.mdc)
+- [存储架构设计](./08-storage-architecture.mdc)
+- [Prometheus 监控规范](./09-prometheus-monitoring.mdc)
+- [编译和运行](./10-compilation-running.mdc)
+- [Go PProf 调试规范](./11-go-pprof-debugging.mdc)
+- [部署和运维](./12-deployment-operations.mdc)
 

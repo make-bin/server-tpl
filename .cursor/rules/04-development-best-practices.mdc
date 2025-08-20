@@ -1,0 +1,245 @@
+# 4. 开发最佳实践
+
+## 4.1 概述
+
+本规范定义了Go HTTP Server项目的开发最佳实践，包括命名规范、错误处理、日志规范、配置管理和测试规范等。
+
+## 4.2 命名规范
+
+- **包名**: 使用小写字母，避免下划线
+- **函数名**: 使用驼峰命名法
+- **常量**: 使用大写字母和下划线
+- **变量**: 使用驼峰命名法
+- **接口名**: 以Service结尾
+- **结构体**: 使用驼峰命名法
+
+## 4.3 错误处理
+
+- 使用统一的错误处理范式
+- 定义业务错误码系统
+- 统一的错误响应格式
+- 错误分类和追踪
+- 记录错误日志
+
+## 4.4 日志规范
+
+- 使用Logrus进行结构化日志
+- 定义日志级别和格式
+- 记录关键业务操作
+- 错误日志包含上下文信息
+
+## 4.5 配置管理
+
+- 使用Viper管理配置
+- 支持多环境配置
+- 配置热重载
+- 敏感信息使用环境变量
+
+## 4.6 测试规范
+
+### 4.6.1 单元测试规范
+
+#### 4.6.1.1 测试文件命名
+- 测试文件以 `_test.go` 结尾
+- 测试文件与源文件在同一目录下
+- 测试包名与源文件包名相同
+
+#### 4.6.1.2 测试函数命名
+```go
+// 测试函数命名规范
+func TestFunctionName(t *testing.T)           // 基本功能测试
+func TestFunctionName_WithSpecificCase(t *testing.T)  // 特定场景测试
+func TestFunctionName_ErrorCase(t *testing.T) // 错误场景测试
+func TestFunctionName_EdgeCase(t *testing.T)  // 边界条件测试
+```
+
+#### 4.6.1.3 测试用例结构
+```go
+func TestUserService_CreateUser(t *testing.T) {
+    // 1. 准备测试数据
+    tests := []struct {
+        name    string
+        input   CreateUserRequest
+        want    *User
+        wantErr bool
+    }{
+        {
+            name: "正常创建用户",
+            input: CreateUserRequest{
+                Name:  "testuser",
+                Email: "test@example.com",
+            },
+            want: &User{
+                Name:  "testuser",
+                Email: "test@example.com",
+            },
+            wantErr: false,
+        },
+        {
+            name: "邮箱格式错误",
+            input: CreateUserRequest{
+                Name:  "testuser",
+                Email: "invalid-email",
+            },
+            want:    nil,
+            wantErr: true,
+        },
+    }
+
+    // 2. 执行测试用例
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // 设置测试环境
+            mockStore := &MockDataStore{}
+            service := NewUserService(mockStore)
+            
+            // 执行被测试的方法
+            got, err := service.CreateUser(context.Background(), tt.input)
+            
+            // 验证结果
+            if (err != nil) != tt.wantErr {
+                t.Errorf("CreateUser() error = %v, wantErr %v", err, tt.wantErr)
+                return
+            }
+            
+            if !reflect.DeepEqual(got, tt.want) {
+                t.Errorf("CreateUser() = %v, want %v", got, tt.want)
+            }
+        })
+    }
+}
+```
+
+### 4.6.2 集成测试规范
+
+#### 4.6.2.1 测试环境设置
+```go
+func TestMain(m *testing.M) {
+    // 设置测试环境
+    setupTestEnvironment()
+    
+    // 运行测试
+    code := m.Run()
+    
+    // 清理测试环境
+    cleanupTestEnvironment()
+    
+    os.Exit(code)
+}
+```
+
+#### 4.6.2.2 数据库测试
+```go
+func TestUserService_Integration(t *testing.T) {
+    // 使用测试数据库
+    db := setupTestDB(t)
+    defer cleanupTestDB(t, db)
+    
+    service := NewUserService(db)
+    
+    // 执行集成测试
+    user, err := service.CreateUser(context.Background(), CreateUserRequest{
+        Name:  "testuser",
+        Email: "test@example.com",
+    })
+    
+    assert.NoError(t, err)
+    assert.NotNil(t, user)
+    assert.Equal(t, "testuser", user.Name)
+}
+```
+
+### 4.6.3 性能测试规范
+
+#### 4.6.3.1 基准测试
+```go
+func BenchmarkUserService_CreateUser(b *testing.B) {
+    service := NewUserService(mockStore)
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        _, err := service.CreateUser(context.Background(), CreateUserRequest{
+            Name:  fmt.Sprintf("user%d", i),
+            Email: fmt.Sprintf("user%d@example.com", i),
+        })
+        if err != nil {
+            b.Fatal(err)
+        }
+    }
+}
+```
+
+## 4.7 代码质量规范
+
+### 4.7.1 代码检查
+- 使用golangci-lint进行代码检查
+- 配置合适的检查规则
+- 在CI/CD中集成代码检查
+- 定期进行代码审查
+
+### 4.7.2 代码格式化
+```bash
+# 格式化代码
+go fmt ./...
+
+# 检查代码格式
+go vet ./...
+
+# 运行代码检查
+golangci-lint run
+```
+
+### 4.7.3 注释规范
+```go
+// Package user 提供用户相关的业务逻辑
+package user
+
+// UserService 定义用户服务接口
+type UserService interface {
+    // CreateUser 创建新用户
+    // 参数：
+    //   - ctx: 上下文
+    //   - req: 创建用户请求
+    // 返回：
+    //   - *User: 创建的用户信息
+    //   - error: 错误信息
+    CreateUser(ctx context.Context, req CreateUserRequest) (*User, error)
+}
+```
+
+## 4.8 版本控制规范
+
+### 4.8.1 Git提交规范
+```
+feat: 新功能
+fix: 修复bug
+docs: 文档更新
+style: 代码格式调整
+refactor: 代码重构
+test: 测试相关
+chore: 构建过程或辅助工具的变动
+```
+
+### 4.8.2 分支管理
+- `main`: 主分支，用于生产环境
+- `develop`: 开发分支
+- `feature/*`: 功能分支
+- `hotfix/*`: 热修复分支
+- `release/*`: 发布分支
+
+## 4.9 文档规范
+
+### 4.9.1 代码文档
+- 为所有导出的函数和类型添加注释
+- 使用Go风格的注释格式
+- 提供使用示例
+
+### 4.9.2 API文档
+- 使用Swagger生成API文档
+- 保持文档与代码同步
+- 提供详细的参数说明
+
+### 4.9.3 项目文档
+- README.md包含项目概述和使用说明
+- 提供详细的部署文档
+- 维护变更日志

@@ -1,0 +1,586 @@
+# 5. 配置管理规范
+
+## 5.1 概述
+
+本规范定义了Go HTTP Server项目的配置管理标准，包括配置文件结构、环境变量管理、配置热重载和最佳实践。
+
+## 5.2 配置架构
+
+### 5.2.1 分层配置
+```
+配置优先级（从高到低）：
+1. 命令行参数
+2. 环境变量
+3. 配置文件
+4. 默认值
+```
+
+### 5.2.2 配置结构
+```go
+// 配置结构定义
+type Config struct {
+    App      AppConfig      `mapstructure:"app"`
+    Database DatabaseConfig `mapstructure:"database"`
+    Redis    RedisConfig    `mapstructure:"redis"`
+    Log      LogConfig      `mapstructure:"log"`
+    Server   ServerConfig   `mapstructure:"server"`
+    Monitor  MonitorConfig  `mapstructure:"monitor"`
+}
+
+type AppConfig struct {
+    Name    string `mapstructure:"name"`
+    Version string `mapstructure:"version"`
+    Env     string `mapstructure:"env"`
+    Debug   bool   `mapstructure:"debug"`
+}
+
+type DatabaseConfig struct {
+    Type     string `mapstructure:"type"`
+    Host     string `mapstructure:"host"`
+    Port     int    `mapstructure:"port"`
+    User     string `mapstructure:"user"`
+    Password string `mapstructure:"password"`
+    Database string `mapstructure:"database"`
+    SSLMode  string `mapstructure:"ssl_mode"`
+    
+    // 连接池配置
+    MaxOpenConns    int           `mapstructure:"max_open_conns"`
+    MaxIdleConns    int           `mapstructure:"max_idle_conns"`
+    ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
+}
+
+type RedisConfig struct {
+    Host     string `mapstructure:"host"`
+    Port     int    `mapstructure:"port"`
+    Password string `mapstructure:"password"`
+    Database int    `mapstructure:"database"`
+    
+    // 连接池配置
+    PoolSize     int           `mapstructure:"pool_size"`
+    MinIdleConns int           `mapstructure:"min_idle_conns"`
+    MaxRetries   int           `mapstructure:"max_retries"`
+    DialTimeout  time.Duration `mapstructure:"dial_timeout"`
+}
+
+type LogConfig struct {
+    Level      string `mapstructure:"level"`
+    Format     string `mapstructure:"format"`
+    Output     string `mapstructure:"output"`
+    FilePath   string `mapstructure:"file_path"`
+    MaxSize    int    `mapstructure:"max_size"`
+    MaxBackups int    `mapstructure:"max_backups"`
+    MaxAge     int    `mapstructure:"max_age"`
+    Compress   bool   `mapstructure:"compress"`
+}
+
+type ServerConfig struct {
+    Host         string        `mapstructure:"host"`
+    Port         int           `mapstructure:"port"`
+    ReadTimeout  time.Duration `mapstructure:"read_timeout"`
+    WriteTimeout time.Duration `mapstructure:"write_timeout"`
+    IdleTimeout  time.Duration `mapstructure:"idle_timeout"`
+    
+    // CORS配置
+    CORS CORSConfig `mapstructure:"cors"`
+}
+
+type CORSConfig struct {
+    AllowedOrigins   []string `mapstructure:"allowed_origins"`
+    AllowedMethods   []string `mapstructure:"allowed_methods"`
+    AllowedHeaders   []string `mapstructure:"allowed_headers"`
+    ExposedHeaders   []string `mapstructure:"exposed_headers"`
+    AllowCredentials bool     `mapstructure:"allow_credentials"`
+    MaxAge           int      `mapstructure:"max_age"`
+}
+
+type MonitorConfig struct {
+    Prometheus PrometheusConfig `mapstructure:"prometheus"`
+    PProf      PProfConfig      `mapstructure:"pprof"`
+}
+
+type PrometheusConfig struct {
+    Enabled     bool   `mapstructure:"enabled"`
+    Path        string `mapstructure:"path"`
+    Port        int    `mapstructure:"port"`
+    Host        string `mapstructure:"host"`
+}
+
+type PProfConfig struct {
+    Enabled    bool   `mapstructure:"enabled"`
+    PathPrefix string `mapstructure:"path_prefix"`
+    Port       int    `mapstructure:"port"`
+}
+```
+
+## 5.3 配置文件
+
+### 5.3.1 主配置文件
+```yaml
+# configs/config.yaml
+app:
+  name: "go-http-server"
+  version: "1.0.0"
+  env: "development"
+  debug: true
+
+database:
+  type: "postgresql"
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "password"
+  database: "server_tpl"
+  ssl_mode: "disable"
+  max_open_conns: 100
+  max_idle_conns: 10
+  conn_max_lifetime: "1h"
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  database: 0
+  pool_size: 10
+  min_idle_conns: 5
+  max_retries: 3
+  dial_timeout: "5s"
+
+log:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  file_path: "logs/app.log"
+  max_size: 100
+  max_backups: 3
+  max_age: 28
+  compress: true
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+  cors:
+    allowed_origins:
+      - "http://localhost:3000"
+      - "https://yourdomain.com"
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed_headers:
+      - "Content-Type"
+      - "Authorization"
+      - "X-Requested-With"
+    exposed_headers:
+      - "Content-Length"
+    allow_credentials: true
+    max_age: 86400
+
+monitor:
+  prometheus:
+    enabled: true
+    path: "/metrics"
+    port: 9090
+    host: "localhost"
+  pprof:
+    enabled: false
+    path_prefix: "/debug/pprof"
+    port: 6060
+```
+
+### 5.3.2 环境特定配置
+```yaml
+# configs/config.production.yaml
+app:
+  env: "production"
+  debug: false
+
+database:
+  host: "prod-db.example.com"
+  ssl_mode: "require"
+
+redis:
+  host: "prod-redis.example.com"
+  password: "${REDIS_PASSWORD}"
+
+log:
+  level: "warn"
+  output: "file"
+
+server:
+  cors:
+    allowed_origins:
+      - "https://yourdomain.com"
+
+monitor:
+  prometheus:
+    enabled: true
+  pprof:
+    enabled: false
+```
+
+```yaml
+# configs/config.test.yaml
+app:
+  env: "test"
+  debug: true
+
+database:
+  type: "memory"
+  host: "localhost"
+
+redis:
+  host: "localhost"
+
+log:
+  level: "debug"
+  output: "stdout"
+
+monitor:
+  prometheus:
+    enabled: false
+  pprof:
+    enabled: true
+```
+
+## 5.4 环境变量
+
+### 5.4.1 环境变量命名规范
+```bash
+# 应用配置
+APP_NAME=go-http-server
+APP_VERSION=1.0.0
+APP_ENV=production
+APP_DEBUG=false
+
+# 数据库配置
+DB_TYPE=postgresql
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=password
+DB_NAME=server_tpl
+DB_SSL_MODE=require
+DB_MAX_OPEN_CONNS=100
+DB_MAX_IDLE_CONNS=10
+
+# Redis配置
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DATABASE=0
+REDIS_POOL_SIZE=10
+
+# 日志配置
+LOG_LEVEL=info
+LOG_FORMAT=json
+LOG_OUTPUT=file
+LOG_FILE_PATH=logs/app.log
+
+# 服务器配置
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8080
+SERVER_READ_TIMEOUT=30s
+SERVER_WRITE_TIMEOUT=30s
+
+# 监控配置
+PROMETHEUS_ENABLED=true
+PROMETHEUS_PORT=9090
+PPROF_ENABLED=false
+```
+
+### 5.4.2 敏感信息管理
+```bash
+# 使用环境变量存储敏感信息
+export DB_PASSWORD="your-secure-password"
+export REDIS_PASSWORD="your-redis-password"
+export JWT_SECRET="your-jwt-secret"
+
+# 或者使用 .env 文件（不要提交到版本控制）
+# .env
+DB_PASSWORD=your-secure-password
+REDIS_PASSWORD=your-redis-password
+JWT_SECRET=your-jwt-secret
+```
+
+## 5.5 配置管理实现
+
+### 5.5.1 配置管理器
+```go
+package config
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "strings"
+    "time"
+    
+    "github.com/spf13/viper"
+)
+
+type Manager struct {
+    config *Config
+    viper  *viper.Viper
+}
+
+func NewManager() *Manager {
+    return &Manager{
+        viper: viper.New(),
+    }
+}
+
+// Load 加载配置
+func (m *Manager) Load(configPath string) error {
+    // 设置配置文件路径
+    if configPath != "" {
+        m.viper.SetConfigFile(configPath)
+    } else {
+        m.viper.SetConfigName("config")
+        m.viper.SetConfigType("yaml")
+        m.viper.AddConfigPath("./configs")
+        m.viper.AddConfigPath(".")
+    }
+    
+    // 设置环境变量前缀
+    m.viper.SetEnvPrefix("")
+    m.viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+    m.viper.AutomaticEnv()
+    
+    // 读取配置文件
+    if err := m.viper.ReadInConfig(); err != nil {
+        if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+            return fmt.Errorf("读取配置文件失败: %w", err)
+        }
+    }
+    
+    // 绑定环境变量
+    m.bindEnvVars()
+    
+    // 解析配置
+    config := &Config{}
+    if err := m.viper.Unmarshal(config); err != nil {
+        return fmt.Errorf("解析配置失败: %w", err)
+    }
+    
+    // 验证配置
+    if err := m.validateConfig(config); err != nil {
+        return fmt.Errorf("配置验证失败: %w", err)
+    }
+    
+    m.config = config
+    return nil
+}
+
+// bindEnvVars 绑定环境变量
+func (m *Manager) bindEnvVars() {
+    // 应用配置
+    m.viper.BindEnv("app.name", "APP_NAME")
+    m.viper.BindEnv("app.version", "APP_VERSION")
+    m.viper.BindEnv("app.env", "APP_ENV")
+    m.viper.BindEnv("app.debug", "APP_DEBUG")
+    
+    // 数据库配置
+    m.viper.BindEnv("database.type", "DB_TYPE")
+    m.viper.BindEnv("database.host", "DB_HOST")
+    m.viper.BindEnv("database.port", "DB_PORT")
+    m.viper.BindEnv("database.user", "DB_USER")
+    m.viper.BindEnv("database.password", "DB_PASSWORD")
+    m.viper.BindEnv("database.database", "DB_NAME")
+    m.viper.BindEnv("database.ssl_mode", "DB_SSL_MODE")
+    
+    // Redis配置
+    m.viper.BindEnv("redis.host", "REDIS_HOST")
+    m.viper.BindEnv("redis.port", "REDIS_PORT")
+    m.viper.BindEnv("redis.password", "REDIS_PASSWORD")
+    m.viper.BindEnv("redis.database", "REDIS_DATABASE")
+    
+    // 日志配置
+    m.viper.BindEnv("log.level", "LOG_LEVEL")
+    m.viper.BindEnv("log.format", "LOG_FORMAT")
+    m.viper.BindEnv("log.output", "LOG_OUTPUT")
+    
+    // 服务器配置
+    m.viper.BindEnv("server.host", "SERVER_HOST")
+    m.viper.BindEnv("server.port", "SERVER_PORT")
+    
+    // 监控配置
+    m.viper.BindEnv("monitor.prometheus.enabled", "PROMETHEUS_ENABLED")
+    m.viper.BindEnv("monitor.pprof.enabled", "PPROF_ENABLED")
+}
+
+// validateConfig 验证配置
+func (m *Manager) validateConfig(config *Config) error {
+    // 验证应用配置
+    if config.App.Name == "" {
+        return fmt.Errorf("应用名称不能为空")
+    }
+    
+    // 验证数据库配置
+    if config.Database.Host == "" {
+        return fmt.Errorf("数据库主机不能为空")
+    }
+    if config.Database.Port <= 0 {
+        return fmt.Errorf("数据库端口必须大于0")
+    }
+    
+    // 验证服务器配置
+    if config.Server.Port <= 0 {
+        return fmt.Errorf("服务器端口必须大于0")
+    }
+    
+    return nil
+}
+
+// GetConfig 获取配置
+func (m *Manager) GetConfig() *Config {
+    return m.config
+}
+
+// WatchConfig 监听配置文件变化
+func (m *Manager) WatchConfig(callback func(*Config)) {
+    m.viper.WatchConfig()
+    m.viper.OnConfigChange(func(e fsnotify.Event) {
+        // 重新加载配置
+        if err := m.Load(""); err != nil {
+            log.Printf("重新加载配置失败: %v", err)
+            return
+        }
+        
+        // 调用回调函数
+        if callback != nil {
+            callback(m.config)
+        }
+    })
+}
+```
+
+### 5.5.2 配置使用示例
+```go
+package main
+
+import (
+    "log"
+    "os"
+    
+    "github.com/make-bin/server-tpl/pkg/config"
+)
+
+func main() {
+    // 创建配置管理器
+    configManager := config.NewManager()
+    
+    // 加载配置
+    configPath := os.Getenv("CONFIG_PATH")
+    if err := configManager.Load(configPath); err != nil {
+        log.Fatalf("加载配置失败: %v", err)
+    }
+    
+    // 获取配置
+    cfg := configManager.GetConfig()
+    
+    // 监听配置变化
+    configManager.WatchConfig(func(newConfig *config.Config) {
+        log.Printf("配置已更新: %s", newConfig.App.Name)
+        // 处理配置更新逻辑
+    })
+    
+    // 使用配置启动服务
+    startServer(cfg)
+}
+
+func startServer(cfg *config.Config) {
+    // 使用配置启动服务器
+    log.Printf("启动服务器: %s:%d", cfg.Server.Host, cfg.Server.Port)
+}
+```
+
+## 5.6 配置最佳实践
+
+### 5.6.1 配置分层
+- **默认配置**: 提供合理的默认值
+- **环境配置**: 根据环境调整配置
+- **本地配置**: 开发人员本地配置
+- **运行时配置**: 通过环境变量或命令行参数覆盖
+
+### 5.6.2 安全考虑
+- **敏感信息**: 使用环境变量存储密码、密钥等敏感信息
+- **配置文件**: 不要将包含敏感信息的配置文件提交到版本控制
+- **权限控制**: 确保配置文件有适当的文件权限
+- **加密存储**: 考虑对敏感配置进行加密
+
+### 5.6.3 配置验证
+- **类型检查**: 验证配置值的类型和范围
+- **依赖检查**: 检查配置项之间的依赖关系
+- **格式验证**: 验证URL、路径等格式
+- **完整性检查**: 确保必需的配置项存在
+
+### 5.6.4 配置文档
+- **配置说明**: 为每个配置项提供详细的说明
+- **示例配置**: 提供完整的配置示例
+- **环境说明**: 说明不同环境的配置差异
+- **变更记录**: 记录配置变更历史
+
+## 5.7 配置工具
+
+### 5.7.1 配置生成工具
+```go
+// 生成配置模板
+func GenerateConfigTemplate() error {
+    config := &Config{
+        App: AppConfig{
+            Name:    "your-app-name",
+            Version: "1.0.0",
+            Env:     "development",
+            Debug:   true,
+        },
+        Database: DatabaseConfig{
+            Type:     "postgresql",
+            Host:     "localhost",
+            Port:     5432,
+            User:     "postgres",
+            Password: "password",
+            Database: "your_database",
+        },
+        // ... 其他配置
+    }
+    
+    // 写入配置文件
+    return writeConfigToFile(config, "configs/config.template.yaml")
+}
+```
+
+### 5.7.2 配置验证工具
+```go
+// 验证配置文件
+func ValidateConfig(configPath string) error {
+    configManager := NewManager()
+    return configManager.Load(configPath)
+}
+```
+
+### 5.7.3 配置迁移工具
+```go
+// 配置迁移
+func MigrateConfig(oldConfigPath, newConfigPath string) error {
+    // 读取旧配置
+    oldConfig, err := loadOldConfig(oldConfigPath)
+    if err != nil {
+        return err
+    }
+    
+    // 转换为新格式
+    newConfig := convertToNewFormat(oldConfig)
+    
+    // 写入新配置
+    return writeConfigToFile(newConfig, newConfigPath)
+}
+```
+description:
+globs:
+alwaysApply: false
+---
