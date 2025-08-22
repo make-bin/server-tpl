@@ -1,0 +1,219 @@
+
+# 日志管理规范
+
+## 1. 技术栈
+- logrus: "github.com/sirupsen/logrus"
+- lumberjack: "gopkg.in/natefinch/lumberjack.v2"
+
+## 2. 日志架构
+
+### 2.1 日志级别
+日志级别（从低到高）：
+1. TRACE - 详细的调试信息
+2. DEBUG - 调试信息
+3. INFO - 一般信息
+4. WARN - 警告信息
+5. ERROR - 错误信息
+6. FATAL - 致命错误
+7. PANIC - 系统崩溃
+
+### 2.2 日志组件
+- **日志记录器**: 负责记录日志
+- **日志格式化器**: 负责格式化日志输出
+- **日志输出器**: 负责输出到不同目标
+- **日志轮转**: 负责日志文件管理
+
+## 3. 日志配置
+
+### 3.1 日志配置结构
+```go
+type LogConfig struct {
+    Level      string `mapstructure:"level"`
+    Format     string `mapstructure:"format"`      // json, text
+    Output     string `mapstructure:"output"`      // stdout, file, both
+    FilePath   string `mapstructure:"file_path"`
+    MaxSize    int    `mapstructure:"max_size"`    // MB
+    MaxBackups int    `mapstructure:"max_backups"`
+    MaxAge     int    `mapstructure:"max_age"`     // days
+    Compress   bool   `mapstructure:"compress"`
+    
+    // 结构化日志配置
+    Fields map[string]interface{} `mapstructure:"fields"`
+    
+    // 性能配置
+    BufferSize int  `mapstructure:"buffer_size"`
+    Async      bool `mapstructure:"async"`
+}
+```
+
+### 3.2 配置文件示例
+```yaml
+# configs/config.yaml
+log:
+  level: "info"
+  format: "json"
+  output: "both"
+  file_path: "logs/app.log"
+  max_size: 100
+  max_backups: 3
+  max_age: 28
+  compress: true
+  fields:
+    service: "go-http-server"
+    version: "1.0.0"
+    environment: "production"
+  buffer_size: 1024
+  async: true
+```
+
+## 4. 日志实现
+
+### 4.1 日志管理器接口
+```go
+type Manager interface {
+    GetLogger() *logrus.Logger
+    WithContext(ctx context.Context) *logrus.Entry
+    WithFields(fields logrus.Fields) *logrus.Entry
+    SetLevel(level string) error
+    SetFormat(format string) error
+    SetOutput(output string) error
+}
+```
+
+### 4.2 核心功能
+- 多级别日志记录
+- 结构化日志输出
+- 日志文件轮转
+- 异步日志写入
+- 上下文日志记录
+- 默认字段注入
+
+## 5. 结构化日志
+
+### 5.1 标准日志字段
+```go
+// 标准日志字段
+const (
+    // 请求相关字段
+    FieldRequestID    = "request_id"
+    FieldUserID       = "user_id"
+    FieldIP           = "ip"
+    FieldUserAgent    = "user_agent"
+    FieldMethod       = "method"
+    FieldPath         = "path"
+    FieldStatusCode   = "status_code"
+    FieldResponseTime = "response_time"
+    
+    // 业务相关字段
+    FieldOperation    = "operation"
+    FieldResource     = "resource"
+    FieldResourceID   = "resource_id"
+    FieldAction       = "action"
+    
+    // 错误相关字段
+    FieldError        = "error"
+    FieldErrorCode    = "error_code"
+    FieldErrorType    = "error_type"
+    FieldStackTrace   = "stack_trace"
+    
+    // 系统相关字段
+    FieldService      = "service"
+    FieldVersion      = "version"
+    FieldEnvironment  = "environment"
+    FieldHost         = "host"
+    FieldPID          = "pid"
+)
+```
+
+### 5.2 日志记录规范
+- 使用结构化字段而不是字符串拼接
+- 包含足够的上下文信息
+- 不要记录敏感信息（密码、令牌等）
+- 避免在日志中执行昂贵的操作
+
+## 6. 日志中间件
+
+### 6.1 HTTP日志中间件
+```go
+// Logger HTTP日志中间件
+func Logger() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        start := time.Now()
+        
+        // 生成请求ID
+        requestID := uuid.New().String()
+        ctx := context.WithValue(c.Request.Context(), "request_id", requestID)
+        c.Request = c.Request.WithContext(ctx)
+        
+        // 设置请求ID到响应头
+        c.Header("X-Request-ID", requestID)
+        
+        // 处理请求
+        c.Next()
+        
+        // 记录请求日志
+        duration := time.Since(start)
+        statusCode := c.Writer.Status()
+        
+        logHTTPRequest(ctx, c.Request, statusCode, duration)
+    }
+}
+```
+
+### 6.2 错误日志中间件
+```go
+// ErrorLogger 错误日志中间件
+func ErrorLogger() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        c.Next()
+        
+        // 检查是否有错误
+        if len(c.Errors) > 0 {
+            for _, err := range c.Errors {
+                log := logger.GetLogger().WithContext(c.Request.Context()).WithFields(logrus.Fields{
+                    "request_id": c.Request.Context().Value("request_id"),
+                    "error":      err.Error(),
+                    "error_type": getErrorType(err.Err),
+                })
+                log.Error("请求处理错误")
+            }
+        }
+    }
+}
+```
+
+## 7. 最佳实践
+
+### 7.1 日志级别使用
+- **TRACE**: 详细的调试信息，仅在开发环境使用
+- **DEBUG**: 调试信息，用于问题排查
+- **INFO**: 一般信息，记录重要的业务操作
+- **WARN**: 警告信息，记录可能的问题
+- **ERROR**: 错误信息，记录错误但不影响系统运行
+- **FATAL**: 致命错误，记录后程序退出
+- **PANIC**: 系统崩溃，记录后程序崩溃
+
+### 7.2 日志内容规范
+- **简洁明了**: 日志消息应该简洁明了
+- **结构化**: 使用结构化字段而不是字符串拼接
+- **上下文**: 包含足够的上下文信息
+- **敏感信息**: 不要记录敏感信息（密码、令牌等）
+- **性能考虑**: 避免在日志中执行昂贵的操作
+
+### 7.3 日志性能优化
+- **异步日志**: 使用异步日志避免阻塞主线程
+- **缓冲写入**: 使用缓冲写入减少I/O操作
+- **级别过滤**: 在生产环境中使用较高的日志级别
+- **采样日志**: 对高频日志进行采样
+
+### 7.4 日志管理
+- **日志轮转**: 配置日志文件轮转避免磁盘空间不足
+- **日志压缩**: 对旧日志进行压缩节省存储空间
+- **日志清理**: 定期清理过期的日志文件
+- **监控告警**: 监控日志文件大小和错误率
+
+
+    }, []string{"file"}).Set(float64(getLogFileSize()))
+}
+```
+

@@ -1,0 +1,37 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+# Go HTTP Server 项目规则
+
+## 📋 项目概述
+
+本项目是一个基于 Go 语言的 HTTP 服务器模板，采用现代化的架构设计和最佳实践。
+
+## 📚 项目规则文档
+
+本项目规则文档已按章节拆分为独立的文件，便于维护和阅读。以下是完整的项目规则内容：
+
+---
+## 1. 项目结构
+
+@.cursor/rules/01-project/101-project-structure.mdc
+
+---
+
+## 🔄 文档维护说明
+
+- 本文件仅聚合 `01-project/` 目录下的项目相关规则
+- 子章节内容独立维护在 `01-project/*.mdc` 文件中
+- 主文件 `01-project.mdc` 使用 Cursor `@` 语法引用章节内容
+- 修改某个章节时，只需编辑对应的章节文件
+
+---
+
+## 📖 快速导航
+
+如需单独查看某个章节，可访问以下文件：
+
+- [项目结构](./01-project/101-project-structure.mdc)

@@ -1,0 +1,451 @@
+# API文档规范
+
+## 1. 概述
+
+本文档定义了使用 Swagger/OpenAPI 3.0 的 API 文档实现规范，包括文档结构、注释规范、代码生成等标准，确保 API 文档的一致性和可维护性。
+
+## 2. Swagger 配置规范
+
+### 2.1 基础配置
+
+#### 2.1.1 Swagger 信息配置
+```go
+// Swagger 基础信息配置
+const (
+    SwaggerTitle       = "API 服务文档"
+    SwaggerDescription = "完整的 API 服务接口文档"
+    SwaggerVersion     = "1.0.0"
+    SwaggerHost        = "api.example.com"
+    SwaggerBasePath    = "/api/v1"
+    SwaggerSchemes     = "https"
+)
+```
+
+#### 2.1.2 文档配置结构
+```go
+// @title API 服务文档
+// @version 1.0.0
+// @description 完整的 API 服务接口文档
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API 支持团队
+// @contact.url http://www.example.com/support
+// @contact.email support@example.com
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host api.example.com
+// @BasePath /api/v1
+// @schemes https
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Bearer token 认证
+```
+
+### 2.2 安全配置
+
+#### 2.2.1 认证方式定义
+```go
+// 安全定义
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+// @description API Key 认证
+
+// @securityDefinitions.oauth2.application OAuth2Application
+// @tokenUrl https://api.example.com/oauth/token
+// @scope.write 写入权限
+// @scope.read 读取权限
+
+// @securityDefinitions.oauth2.implicit OAuth2Implicit
+// @authorizationUrl https://api.example.com/oauth/authorize
+// @scope.write 写入权限
+// @scope.read 读取权限
+```
+
+## 3. API 注释规范
+
+### 3.1 接口注释结构
+
+#### 3.1.1 基础注释模板
+```go
+// @Summary 接口摘要
+// @Description 详细的接口描述
+// @Tags 标签名称
+// @Accept json
+// @Produce json
+// @Param 参数名 参数位置 参数类型 是否必须 参数描述
+// @Success 状态码 {返回类型} 返回描述
+// @Failure 状态码 {返回类型} 错误描述
+// @Router 路由路径 [请求方法]
+// @Security 安全定义名称
+```
+
+#### 3.1.2 参数注释规范
+```go
+// 路径参数
+// @Param id path string true "资源ID" minlength(1) maxlength(50)
+
+// 查询参数
+// @Param page query int false "页码" default(1) minimum(1)
+// @Param size query int false "每页数量" default(10) minimum(1) maximum(100)
+// @Param keyword query string false "搜索关键词" maxlength(100)
+
+// 请求体参数
+// @Param request body RequestStruct true "请求参数"
+
+// 请求头参数
+// @Param Authorization header string true "认证令牌" default(Bearer {token})
+// @Param X-Request-ID header string false "请求ID"
+```
+
+### 3.2 响应注释规范
+
+#### 3.2.1 成功响应
+```go
+// @Success 200 {object} Response{data=User} "成功返回用户信息"
+// @Success 200 {object} Response{data=[]User} "成功返回用户列表"
+// @Success 200 {object} Response{data=PaginationResponse{items=[]User}} "成功返回分页用户列表"
+```
+
+#### 3.2.2 错误响应
+```go
+// @Failure 400 {object} Response{error=string} "参数错误"
+// @Failure 401 {object} Response{error=string} "认证失败"
+// @Failure 403 {object} Response{error=string} "权限不足"
+// @Failure 404 {object} Response{error=string} "资源不存在"
+// @Failure 500 {object} Response{error=string} "服务器内部错误"
+```
+
+## 4. 数据结构定义规范
+
+### 4.1 请求结构体
+
+#### 4.1.1 基础请求结构
+```go
+// CreateUserRequest 创建用户请求
+// @Description 创建用户的请求参数
+type CreateUserRequest struct {
+    // @Description 用户名，3-50个字符，只能包含字母、数字、下划线
+    // @Example "john_doe"
+    Username string `json:"username" binding:"required,min=3,max=50,alphanum" example:"john_doe"`
+    
+    // @Description 邮箱地址
+    // @Example "john@example.com"
+    Email string `json:"email" binding:"required,email" example:"john@example.com"`
+    
+    // @Description 密码，至少8位，包含大小写字母、数字和特殊字符
+    // @Example "Password123!"
+    Password string `json:"password" binding:"required,min=8" example:"Password123!"`
+    
+    // @Description 手机号，11位数字
+    // @Example "13800138000"
+    Phone string `json:"phone" binding:"omitempty,phone" example:"13800138000"`
+    
+    // @Description 年龄，0-150岁
+    // @Example 25
+    Age int `json:"age" binding:"omitempty,gte=0,lte=150" example:"25"`
+}
+```
+
+#### 4.1.2 分页请求结构
+```go
+// ListUsersRequest 用户列表请求
+// @Description 获取用户列表的请求参数
+type ListUsersRequest struct {
+    // @Description 页码，从1开始
+    // @Example 1
+    Page int `json:"page" form:"page" binding:"omitempty,min=1" example:"1"`
+    
+    // @Description 每页数量，1-100
+    // @Example 10
+    Size int `json:"size" form:"size" binding:"omitempty,min=1,max=100" example:"10"`
+    
+    // @Description 搜索关键词
+    // @Example "john"
+    Keyword string `json:"keyword" form:"keyword" binding:"omitempty,max=100" example:"john"`
+    
+    // @Description 排序字段
+    // @Example "created_at"
+    SortBy string `json:"sort_by" form:"sort_by" binding:"omitempty" example:"created_at"`
+    
+    // @Description 排序方向：asc(升序) 或 desc(降序)
+    // @Example "desc"
+    SortDir string `json:"sort_dir" form:"sort_dir" binding:"omitempty,oneof=asc desc" example:"desc"`
+}
+```
+
+### 4.2 响应结构体
+
+#### 4.2.1 基础响应结构
+```go
+// Response 标准响应结构
+// @Description 统一的API响应格式
+type Response struct {
+    // @Description 请求是否成功
+    // @Example true
+    Success bool `json:"success" example:"true"`
+    
+    // @Description 业务状态码
+    // @Example 200
+    Code int `json:"code" example:"200"`
+    
+    // @Description 响应消息
+    // @Example "操作成功"
+    Message string `json:"message" example:"操作成功"`
+    
+    // @Description 响应数据
+    Data interface{} `json:"data,omitempty"`
+    
+    // @Description 错误详情
+    Error string `json:"error,omitempty"`
+    
+    // @Description 时间戳
+    // @Example "2024-01-01T12:00:00Z"
+    Timestamp string `json:"timestamp" example:"2024-01-01T12:00:00Z"`
+    
+    // @Description 请求ID
+    // @Example "req_123456789"
+    RequestID string `json:"request_id" example:"req_123456789"`
+}
+
+// PaginationResponse 分页响应结构
+// @Description 分页数据响应格式
+type PaginationResponse struct {
+    // @Description 数据列表
+    Items interface{} `json:"items"`
+    
+    // @Description 分页信息
+    Pagination Pagination `json:"pagination"`
+}
+
+// Pagination 分页信息
+// @Description 分页详细信息
+type Pagination struct {
+    // @Description 当前页码
+    // @Example 1
+    Page int `json:"page" example:"1"`
+    
+    // @Description 每页数量
+    // @Example 10
+    Size int `json:"size" example:"10"`
+    
+    // @Description 总记录数
+    // @Example 100
+    Total int `json:"total" example:"100"`
+    
+    // @Description 总页数
+    // @Example 10
+    Pages int `json:"pages" example:"10"`
+}
+```
+
+#### 4.2.2 业务数据结构
+```go
+// User 用户信息
+// @Description 用户详细信息
+type User struct {
+    // @Description 用户ID
+    // @Example "user_123456789"
+    ID string `json:"id" example:"user_123456789"`
+    
+    // @Description 用户名
+    // @Example "john_doe"
+    Username string `json:"username" example:"john_doe"`
+    
+    // @Description 邮箱地址
+    // @Example "john@example.com"
+    Email string `json:"email" example:"john@example.com"`
+    
+    // @Description 手机号
+    // @Example "13800138000"
+    Phone string `json:"phone" example:"13800138000"`
+    
+    // @Description 年龄
+    // @Example 25
+    Age int `json:"age" example:"25"`
+    
+    // @Description 用户状态
+    // @Example "active"
+    Status string `json:"status" example:"active"`
+    
+    // @Description 创建时间
+    // @Example "2024-01-01T12:00:00Z"
+    CreatedAt string `json:"created_at" example:"2024-01-01T12:00:00Z"`
+    
+    // @Description 更新时间
+    // @Example "2024-01-01T12:00:00Z"
+    UpdatedAt string `json:"updated_at" example:"2024-01-01T12:00:00Z"`
+}
+```
+
+## 5. 接口实现示例
+
+### 5.1 用户管理接口
+
+#### 5.1.1 创建用户
+```go
+// CreateUser godoc
+// @Summary 创建用户
+// @Description 创建新用户账户
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Param request body CreateUserRequest true "用户创建请求"
+// @Success 200 {object} Response{data=User} "用户创建成功"
+// @Failure 400 {object} Response{error=string} "参数错误"
+// @Failure 409 {object} Response{error=string} "用户已存在"
+// @Failure 500 {object} Response{error=string} "服务器内部错误"
+// @Router /users [post]
+// @Security BearerAuth
+func (h *UserHandler) CreateUser(c *gin.Context) {
+    var req CreateUserRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        response.Error(c, http.StatusBadRequest, "参数验证失败", err)
+        return
+    }
+    
+    user, err := h.userService.CreateUser(c.Request.Context(), req)
+    if err != nil {
+        if errors.Is(err, domain.ErrUserExists) {
+            response.Error(c, http.StatusConflict, "用户已存在", err)
+        } else {
+            response.Error(c, http.StatusInternalServerError, "创建用户失败", err)
+        }
+        return
+    }
+    
+    response.Success(c, user)
+}
+```
+
+#### 5.1.2 获取用户列表
+```go
+// ListUsers godoc
+// @Summary 获取用户列表
+// @Description 分页获取用户列表
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Param page query int false "页码" default(1) minimum(1)
+// @Param size query int false "每页数量" default(10) minimum(1) maximum(100)
+// @Param keyword query string false "搜索关键词" maxlength(100)
+// @Param sort_by query string false "排序字段" example("created_at")
+// @Param sort_dir query string false "排序方向" Enums(asc, desc) default(desc)
+// @Success 200 {object} Response{data=PaginationResponse{items=[]User}} "获取成功"
+// @Failure 400 {object} Response{error=string} "参数错误"
+// @Failure 500 {object} Response{error=string} "服务器内部错误"
+// @Router /users [get]
+// @Security BearerAuth
+func (h *UserHandler) ListUsers(c *gin.Context) {
+    var req ListUsersRequest
+    if err := c.ShouldBindQuery(&req); err != nil {
+        response.Error(c, http.StatusBadRequest, "参数验证失败", err)
+        return
+    }
+    
+    users, total, err := h.userService.ListUsers(c.Request.Context(), req)
+    if err != nil {
+        response.Error(c, http.StatusInternalServerError, "获取用户列表失败", err)
+        return
+    }
+    
+    response.Page(c, users, req.Page, req.Size, total)
+}
+```
+
+#### 5.1.3 获取用户详情
+```go
+// GetUser godoc
+// @Summary 获取用户详情
+// @Description 根据用户ID获取用户详细信息
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Param id path string true "用户ID" minlength(1) maxlength(50)
+// @Success 200 {object} Response{data=User} "获取成功"
+// @Failure 400 {object} Response{error=string} "参数错误"
+// @Failure 404 {object} Response{error=string} "用户不存在"
+// @Failure 500 {object} Response{error=string} "服务器内部错误"
+// @Router /users/{id} [get]
+// @Security BearerAuth
+func (h *UserHandler) GetUser(c *gin.Context) {
+    userID := c.Param("id")
+    
+    user, err := h.userService.GetUserByID(c.Request.Context(), userID)
+    if err != nil {
+        if errors.Is(err, domain.ErrUserNotFound) {
+            response.Error(c, http.StatusNotFound, "用户不存在", err)
+        } else {
+            response.Error(c, http.StatusInternalServerError, "获取用户信息失败", err)
+        }
+        return
+    }
+    
+    response.Success(c, user)
+}
+```
+
+## 6. 文档生成和部署
+
+### 6.1 文档生成配置
+```go
+// 初始化Swagger文档
+func initSwagger() {
+    docs.SwaggerInfo.Title = "API 服务文档"
+    docs.SwaggerInfo.Description = "完整的 API 服务接口文档"
+    docs.SwaggerInfo.Version = "1.0.0"
+    docs.SwaggerInfo.Host = "api.example.com"
+    docs.SwaggerInfo.BasePath = "/api/v1"
+    docs.SwaggerInfo.Schemes = []string{"https"}
+}
+
+// 设置Swagger路由
+func setupSwaggerRoutes(r *gin.Engine) {
+    // Swagger UI
+    r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+    
+    // API文档JSON
+    r.GET("/swagger.json", func(c *gin.Context) {
+        c.JSON(http.StatusOK, docs.SwaggerInfo)
+    })
+}
+```
+
+### 6.2 文档生成命令
+```bash
+# 安装swag工具
+go install github.com/swaggo/swag/cmd/swag@latest
+
+# 生成文档
+swag init -g main.go -o docs
+
+# 生成文档并指定输出目录
+swag init -g main.go -o docs --parseDependency --parseInternal
+
+# 生成文档并指定配置文件
+swag init -g main.go -c swagger.yml
+```
+
+## 7. 最佳实践
+
+### 7.1 注释编写最佳实践
+- **简洁明了**: 注释应该简洁明了，避免冗余
+- **示例完整**: 提供完整的请求和响应示例
+- **参数详细**: 详细描述每个参数的含义和约束
+- **错误明确**: 明确说明可能的错误情况
+
+### 7.2 文档维护最佳实践
+- **及时更新**: API变更时及时更新文档
+- **版本控制**: 使用版本控制管理文档
+- **自动化**: 自动化文档生成和部署
+- **测试验证**: 定期验证文档的准确性
+
+### 7.3 文档结构最佳实践
+- **分类清晰**: 按功能模块分类API
+- **标签合理**: 使用合理的标签组织API
+- **示例丰富**: 提供丰富的使用示例
+- **错误完整**: 完整描述错误码和错误信息

@@ -1,3 +1,9 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
 # 1. 项目结构
 
 ## 1.1 项目概述
@@ -101,44 +107,72 @@
 ├── go.sum                 # Go依赖校验文件
 ├── Dockerfile             # Docker容器化文件
 ├── .golangci.yml          # Go代码检查配置
-├── REFACTOR_SUMMARY.md    # 重构总结文档
-├── RUNNING_SUMMARY.md     # 运行总结文档
 └── README.md              # 项目说明文档
 ```
 
-## 1.4 技术栈
+## 1.4 初始化核心代码结构
+### 1.4.1 初始化 api 接口实现
+pkg/api/interface.go
+```go
+package api
 
-- **HTTP框架**: Gin
-- **配置管理**: Viper
-- **日志框架**: Logrus
-- **数据库**: PostgreSQL + GORM
-- **依赖注入**: 自定义简单容器
-- **验证**: go-playground/validator
-- **API文档**: Swagger
-- **代码检查**: golangci-lint
-- **依赖管理**: Go Modules + vendor 目录缓存
-- **监控指标**: Prometheus + Grafana
-- **性能分析**: Go PProf
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+)
 
-## 1.5 依赖管理规范
+var registeredAPIInterfaces []APIInterface
 
-### 1.5.1 Vendor 目录缓存
-项目默认使用 vendor 目录进行依赖缓存，确保构建的一致性和离线构建能力：
+var registerValidationInterfaces map[string]validator.Func
 
-```bash
-# 初始化 vendor 目录
-go mod vendor
+type APIInterface interface {
+	InitAPIServiceRoute(rg *gin.RouterGroup)
+}
 
-# 使用 vendor 目录构建
-go build -mod=vendor ./...
+// RegisterAPIInterface register APIInterface
+func RegisterAPIInterface(api APIInterface) {
+	registeredAPIInterfaces = append(registeredAPIInterfaces, api)
+}
 
-# 更新依赖并重新生成 vendor
-go mod tidy
-go mod vendor
+func GetRegisterAPIInterfaces() []APIInterface {
+	return registeredAPIInterfaces
+}
+
+// InitAPI convert APIinterface to beans type
+func InitAPI() []interface{} {
+	var beans []interface{}
+	for i := range registeredAPIInterfaces {
+		beans = append(beans, registeredAPIInterfaces[i])
+	}
+	return beans
+}
+
+// RegisterValidationInterface register validation function
+func RegisterValidationInterface(name string, fn validator.Func) {
+	if registerValidationInterfaces == nil {
+		registerValidationInterfaces = make(map[string]validator.Func)
+	}
+	registerValidationInterfaces[name] = fn
+}
+
+func GetRegisterValidationInterfaces() map[string]validator.Func {
+	return registerValidationInterfaces
+}
+
+func init() {
+	// Todo RegisterAPIInterface(newApplication())
+}
+```
+### 1.4.2 初始化domain service 接口
+pkg/domain/service/interface.go
+```go
+package service
+
+// InitServiceBean convert service interface to bean type
+func InitServiceBean() []interface{} {
+	return []interface{}{
+		// Todo NewApplicationService(),
+	}
+}
 ```
 
-### 1.5.2 依赖管理最佳实践
-1. **版本锁定**: 使用 `go.mod` 和 `go.sum` 锁定依赖版本
-2. **本地缓存**: 使用 `vendor/` 目录缓存所有依赖
-3. **定期更新**: 定期更新依赖版本，确保安全性
-4. **构建一致性**: 使用 `-mod=vendor` 确保构建一致性

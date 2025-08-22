@@ -1,10 +1,11 @@
-# 5. 存储架构设计
 
-## 5.1 概述
+# 存储架构设计规范
+
+## 1. 概述
 
 本规范定义了Go HTTP Server项目的存储架构设计，采用统一的抽象接口层，支持多种存储后端。
 
-## 5.2 抽象接口层
+## 2. 抽象接口层
 
 项目采用统一的存储抽象接口，支持多种存储后端：
 
@@ -35,26 +36,35 @@ type DataStore interface {
     Count(ctx context.Context, entity Entity, options *FilterOptions) (int64, error)
     IsExist(ctx context.Context, entity Entity) (bool, error)
 }
+
+// Transaction 事务接口
+type Transaction interface {
+    Commit() error
+    Rollback() error
+    Add(ctx context.Context, entity Entity) error
+    Put(ctx context.Context, entity Entity) error
+    Delete(ctx context.Context, entity Entity) error
+}
 ```
 
-## 5.3 支持的存储后端
+## 3. 支持的存储后端
 
-### 5.3.1 PostgreSQL
+### 3.1 PostgreSQL
 - **用途**: 生产环境主数据库
 - **特点**: 功能完整、性能稳定、社区活跃
 - **适用场景**: 生产环境、复杂查询
 
-### 5.3.2 OpenGauss
+### 3.2 OpenGauss
 - **用途**: 兼容 PostgreSQL 的国产数据库
 - **特点**: 自主可控、兼容性好
 - **适用场景**: 国产化要求、政府项目
 
-### 5.3.3 Memory
+### 3.3 Memory
 - **用途**: 内存存储，用于测试和开发
 - **特点**: 速度快、无需外部依赖
 - **适用场景**: 单元测试、开发调试
 
-## 5.4 工厂模式
+## 4. 工厂模式
 
 使用工厂模式创建存储实例：
 
@@ -72,21 +82,9 @@ config := &datastore.Config{
 store, err := factory.NewDataStore(config)
 ```
 
-## 5.5 事务管理
+## 5. 事务管理
 
-### 5.5.1 事务接口
-```go
-// Transaction 事务接口
-type Transaction interface {
-    Commit() error
-    Rollback() error
-    Add(ctx context.Context, entity Entity) error
-    Put(ctx context.Context, entity Entity) error
-    Delete(ctx context.Context, entity Entity) error
-}
-```
-
-### 5.5.2 事务使用示例
+### 5.1 事务使用规范
 ```go
 func (s *userService) CreateUserWithProfile(ctx context.Context, user *User, profile *Profile) error {
     tx, err := s.store.BeginTx(ctx)
@@ -110,9 +108,9 @@ func (s *userService) CreateUserWithProfile(ctx context.Context, user *User, pro
 }
 ```
 
-## 5.6 查询优化
+## 6. 查询优化
 
-### 5.6.1 分页查询
+### 6.1 分页查询
 ```go
 // ListOptions 列表查询选项
 type ListOptions struct {
@@ -124,7 +122,7 @@ type ListOptions struct {
 }
 ```
 
-### 5.6.2 索引设计
+### 6.2 索引设计
 ```go
 // 实体索引定义
 func (u *User) Index() map[string]interface{} {
@@ -135,9 +133,9 @@ func (u *User) Index() map[string]interface{} {
 }
 ```
 
-## 5.7 连接池管理
+## 7. 连接池管理
 
-### 5.7.1 连接池配置
+### 7.1 连接池配置
 ```go
 type Config struct {
     Type            string        `json:"type"`
@@ -152,16 +150,16 @@ type Config struct {
 }
 ```
 
-### 5.7.2 健康检查
+### 7.2 健康检查
 ```go
 func (p *PostgreSQLStore) HealthCheck(ctx context.Context) error {
     return p.db.WithContext(ctx).Raw("SELECT 1").Error
 }
 ```
 
-## 5.8 数据迁移
+## 8. 数据迁移
 
-### 5.8.1 自动迁移
+### 8.1 自动迁移
 ```go
 func (p *PostgreSQLStore) Connect(ctx context.Context) error {
     // 连接数据库
@@ -181,7 +179,7 @@ func (p *PostgreSQLStore) Connect(ctx context.Context) error {
 }
 ```
 
-### 5.8.2 手动迁移
+### 8.2 手动迁移
 ```go
 // 执行SQL迁移脚本
 func (p *PostgreSQLStore) Migrate(ctx context.Context, sql string) error {
@@ -189,9 +187,9 @@ func (p *PostgreSQLStore) Migrate(ctx context.Context, sql string) error {
 }
 ```
 
-## 5.9 缓存策略
+## 9. 缓存策略
 
-### 5.9.1 缓存接口
+### 9.1 缓存接口
 ```go
 type Cache interface {
     Get(ctx context.Context, key string) (interface{}, error)
@@ -201,7 +199,7 @@ type Cache interface {
 }
 ```
 
-### 5.9.2 缓存使用
+### 9.2 缓存使用
 ```go
 func (s *userService) GetUser(ctx context.Context, id string) (*User, error) {
     // 先从缓存获取
@@ -224,9 +222,9 @@ func (s *userService) GetUser(ctx context.Context, id string) (*User, error) {
 }
 ```
 
-## 5.10 性能监控
+## 10. 性能监控
 
-### 5.10.1 查询性能监控
+### 10.1 查询性能监控
 ```go
 func (p *PostgreSQLStore) Get(ctx context.Context, entity Entity) error {
     start := time.Now()
@@ -238,7 +236,7 @@ func (p *PostgreSQLStore) Get(ctx context.Context, entity Entity) error {
 }
 ```
 
-### 5.10.2 连接池监控
+### 10.2 连接池监控
 ```go
 func (p *PostgreSQLStore) getStats() map[string]interface{} {
     sqlDB, _ := p.db.DB()
@@ -246,6 +244,31 @@ func (p *PostgreSQLStore) getStats() map[string]interface{} {
         "max_open_connections": sqlDB.Stats().MaxOpenConnections,
         "open_connections":     sqlDB.Stats().OpenConnections,
         "in_use":              sqlDB.Stats().InUse,
+        "idle":                sqlDB.Stats().Idle,
+    }
+}
+```
+
+## 11. 最佳实践
+
+### 11.1 数据访问最佳实践
+- **连接池管理**: 合理配置连接池参数
+- **事务使用**: 在需要原子性的操作中使用事务
+- **索引优化**: 为常用查询字段创建索引
+- **查询优化**: 避免N+1查询问题
+
+### 11.2 缓存最佳实践
+- **缓存策略**: 根据数据访问模式选择合适的缓存策略
+- **缓存失效**: 合理设置缓存过期时间
+- **缓存穿透**: 防止缓存穿透攻击
+- **缓存一致性**: 保证缓存与数据库的一致性
+
+### 11.3 性能优化最佳实践
+- **监控指标**: 监控查询性能、连接池状态
+- **慢查询分析**: 定期分析慢查询并优化
+- **批量操作**: 使用批量操作提高性能
+- **读写分离**: 在适当场景下使用读写分离
+
         "idle":                sqlDB.Stats().Idle,
     }
 }

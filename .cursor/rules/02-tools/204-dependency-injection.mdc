@@ -1,0 +1,79 @@
+# 依赖注入规范
+
+## 1. 概述
+
+使用依赖注入方式来初始化服务，提供灵活的依赖管理和解耦能力。
+
+## 2. 容器实现
+
+### 2.1 容器接口
+```go
+type Container interface {
+    Provide(name string, bean interface{}) error
+    Get(name string) (interface{}, bool)
+    Populate() error
+    Close() error
+}
+```
+
+### 2.2 核心功能
+- 依赖注册和获取
+- 自动依赖注入
+- 生命周期管理
+- 循环依赖检测
+- 懒加载支持
+
+## 3. 使用规范
+
+### 3.1 依赖注册
+```go
+// 注册依赖
+container.Provide("config", config)
+container.Provide("logger", logger)
+container.Provide("database", database)
+container.Provide("redis", redis)
+container.Provide("userService", userService)
+container.Provide("userController", userController)
+```
+
+### 3.2 依赖注入
+```go
+// 结构体注入
+type UserService struct {
+    userRepo UserRepository `inject:"userRepository"`
+    logger   Logger        `inject:"logger"`
+}
+
+// 构造函数注入
+func NewUserService(userRepo UserRepository, logger Logger) *UserService {
+    return &UserService{
+        userRepo: userRepo,
+        logger:   logger,
+    }
+}
+```
+
+## 4. 最佳实践
+
+### 4.1 依赖设计原则
+- **单一职责**: 每个依赖只负责一个功能
+- **接口隔离**: 依赖接口而不是具体实现
+- **依赖倒置**: 高层模块不依赖低层模块
+- **控制反转**: 依赖的创建由容器控制
+
+### 4.2 生命周期管理
+- **单例模式**: 全局唯一的实例
+- **原型模式**: 每次获取新实例
+- **会话模式**: 会话级别的实例
+- **请求模式**: 请求级别的实例
+
+### 4.3 性能优化
+- **懒加载**: 按需创建依赖
+- **缓存机制**: 缓存已创建的实例
+- **并发安全**: 支持并发访问
+- **内存管理**: 及时释放无用依赖
+	// 这里可以实现更复杂的依赖注入逻辑
+	// 目前只是简单的注册
+	return nil
+}
+```

@@ -1,3 +1,9 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
 # 8. 测试规范
 
 ## 8.1 概述
@@ -952,7 +958,3 @@ func GenerateReport(report *TestReport, filename string) error {
     return encoder.Encode(report)
 }
 ```
-description:
-globs:
-alwaysApply: false
----

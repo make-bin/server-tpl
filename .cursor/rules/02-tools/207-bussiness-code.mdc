@@ -1,0 +1,350 @@
+# 业务代码规范
+
+## 1. 概述
+
+本文档定义了项目中业务代码的实现规范，包括错误码分类、编码规则、错误处理、错误响应等标准，确保业务错误处理的一致性和可维护性。
+
+## 2. 错误码分类规范
+
+### 2.1 错误码范围定义
+
+#### 2.1.1 错误码区间规范
+```go
+// 错误码区间定义
+const (
+    // 成功状态码 (200-299)
+    SuccessCodeMin = 200
+    SuccessCodeMax = 299
+    
+    // 系统错误码 (10000-19999)
+    SystemErrorCodeMin = 10000
+    SystemErrorCodeMax = 19999
+    
+    // 客户端错误码 (20000-29999)
+    ClientErrorCodeMin = 20000
+    ClientErrorCodeMax = 29999
+    
+    // 业务错误码 (30000-99999)
+    BusinessErrorCodeMin = 30000
+    BusinessErrorCodeMax = 99999
+    
+    // 第三方服务错误码 (100000-199999)
+    ThirdPartyErrorCodeMin = 100000
+    ThirdPartyErrorCodeMax = 199999
+)
+```
+
+#### 2.1.2 错误码分类表
+| 错误类型 | 错误码范围 | 说明 |
+|---------|-----------|------|
+| 成功 | 200-299 | HTTP 标准成功状态码 |
+| 系统错误 | 10000-19999 | 系统内部错误 |
+| 客户端错误 | 20000-29999 | 客户端请求错误 |
+| 业务错误 | 30000-99999 | 业务逻辑错误 |
+| 第三方服务错误 | 100000-199999 | 第三方服务错误 |
+
+### 2.2 错误码命名规范
+
+#### 2.2.1 错误码常量命名
+```go
+// 错误码常量命名规范
+const (
+    // 系统错误码 (10000-19999)
+    CodeSystemError           = 10000
+    CodeDatabaseError         = 10001
+    CodeCacheError           = 10002
+    CodeNetworkError         = 10003
+    CodeServiceUnavailable   = 10004
+    CodeInternalServerError  = 10005
+    CodeConfigError          = 10006
+    CodeFileSystemError      = 10007
+    CodeMemoryError          = 10008
+    CodeTimeoutError         = 10009
+    
+    // 客户端错误码 (20000-29999)
+    CodeValidationError      = 20000
+    CodeMissingParameter     = 20001
+    CodeInvalidParameter     = 20002
+    CodeParameterTypeError   = 20003
+    CodeUnauthorized         = 20004
+    CodeForbidden           = 20005
+    CodeNotFound            = 20006
+    CodeMethodNotAllowed    = 20007
+    CodeConflict            = 20008
+    CodeTooManyRequests     = 20009
+    CodeRequestTimeout      = 20010
+    CodePayloadTooLarge     = 20011
+    CodeUnsupportedMediaType = 20012
+)
+```
+
+#### 2.2.2 业务错误码命名
+```go
+// 业务错误码命名规范
+const (
+    // 用户相关错误 (30000-30999)
+    CodeUserNotFound         = 30000
+    CodeUserExists           = 30001
+    CodeUserDisabled         = 30002
+    CodeUserLocked           = 30003
+    CodeUserDeleted          = 30004
+    CodePasswordError        = 30005
+    CodePasswordExpired      = 30006
+    CodePasswordTooWeak      = 30007
+    CodeEmailExists          = 30008
+    CodePhoneExists          = 30009
+    CodeUsernameExists       = 30010
+    CodeUserProfileIncomplete = 30011
+    CodeUserVerificationRequired = 30012
+    CodeUserAccountSuspended = 30013
+    
+    // 订单相关错误 (31000-31999)
+    CodeOrderNotFound        = 31000
+    CodeOrderExists          = 31001
+    CodeOrderCancelled       = 31002
+    CodeOrderCompleted       = 31003
+    CodeOrderExpired         = 31004
+    CodeOrderPaid            = 31005
+    CodeOrderRefunded        = 31006
+    CodeOrderProcessing      = 31007
+    CodeOrderShipped         = 31008
+    CodeOrderDelivered       = 31009
+    CodeOrderReturned        = 31010
+    CodeOrderAmountInvalid   = 31011
+    CodeOrderQuantityInvalid = 31012
+    CodeOrderStatusInvalid   = 31013
+    
+    // 支付相关错误 (32000-32999)
+    CodePaymentFailed        = 32000
+    CodePaymentTimeout       = 32001
+    CodePaymentCancelled     = 32002
+    CodePaymentRefunded      = 32003
+    CodePaymentProcessing    = 32004
+    CodePaymentCompleted     = 32005
+    CodeInsufficientBalance  = 32006
+    CodePaymentMethodInvalid = 32007
+    CodePaymentAmountInvalid = 32008
+    CodePaymentCurrencyInvalid = 32009
+    CodePaymentGatewayError  = 32010
+    CodePaymentSignatureInvalid = 32011
+    CodePaymentOrderNotFound = 32012
+    CodePaymentDuplicate     = 32013
+    
+    // 商品相关错误 (33000-33999)
+    CodeProductNotFound      = 33000
+    CodeProductExists        = 33001
+    CodeProductDisabled      = 33002
+    CodeProductDeleted       = 33003
+    CodeProductOutOfStock    = 33004
+    CodeProductPriceInvalid  = 33005
+    CodeProductCategoryInvalid = 33006
+    CodeProductImageInvalid  = 33007
+    CodeProductDescriptionInvalid = 33008
+    CodeProductSkuExists     = 33009
+    CodeProductBarcodeExists = 33010
+    CodeProductInventoryInsufficient = 33011
+    CodeProductExpired       = 33012
+    CodeProductRecalled      = 33013
+)
+```
+
+## 3. 错误码管理规范
+
+### 3.1 错误码注册规范
+
+#### 3.1.1 错误码注册表
+```go
+// ErrorCodeRegistry 错误码注册表
+type ErrorCodeRegistry struct {
+    codes map[int]*ErrorCode
+    mutex sync.RWMutex
+}
+
+// ErrorCode 错误码定义
+type ErrorCode struct {
+    Code        int    `json:"code"`
+    Message     string `json:"message"`
+    Description string `json:"description"`
+    Category    string `json:"category"`
+    Module      string `json:"module"`
+    HTTPStatus  int    `json:"http_status"`
+    Retryable   bool   `json:"retryable"`
+    LogLevel    string `json:"log_level"`
+    Solution    string `json:"solution"`
+}
+
+// RegisterErrorCode 注册错误码
+func (r *ErrorCodeRegistry) RegisterErrorCode(code *ErrorCode) error
+
+// GetErrorCode 获取错误码
+func (r *ErrorCodeRegistry) GetErrorCode(code int) (*ErrorCode, bool)
+
+// GetAllErrorCodes 获取所有错误码
+func (r *ErrorCodeRegistry) GetAllErrorCodes() map[int]*ErrorCode
+```
+
+#### 3.1.2 错误码分类管理
+```go
+// ErrorCategory 错误分类
+type ErrorCategory struct {
+    Name        string `json:"name"`
+    Description string `json:"description"`
+    CodeRange   string `json:"code_range"`
+    Module      string `json:"module"`
+}
+
+// 错误分类定义
+var ErrorCategories = []ErrorCategory{
+    {
+        Name:        "系统错误",
+        Description: "系统内部错误，包括数据库、缓存、网络等",
+        CodeRange:   "10000-19999",
+        Module:      "system",
+    },
+    {
+        Name:        "客户端错误",
+        Description: "客户端请求错误，包括参数验证、权限等",
+        CodeRange:   "20000-29999",
+        Module:      "client",
+    },
+    {
+        Name:        "业务错误",
+        Description: "业务逻辑错误，包括用户、订单、支付等",
+        CodeRange:   "30000-99999",
+        Module:      "business",
+    },
+    {
+        Name:        "第三方服务错误",
+        Description: "第三方服务调用错误",
+        CodeRange:   "100000-199999",
+        Module:      "third_party",
+    },
+}
+```
+
+## 4. 业务代码结构规范
+
+### 4.1 分层架构
+```go
+// 分层架构规范
+// Controller -> Service -> Repository -> Database
+
+// Controller 控制器层
+type UserController struct {
+    userService UserService
+    logger      Logger
+}
+
+// Service 服务层
+type UserService struct {
+    userRepo UserRepository
+    logger   Logger
+}
+
+// Repository 数据访问层
+type UserRepository struct {
+    db     *gorm.DB
+    logger Logger
+}
+```
+
+### 4.2 接口定义规范
+```go
+// 接口定义规范
+type UserService interface {
+    CreateUser(ctx context.Context, user *User) error
+    GetUser(ctx context.Context, id string) (*User, error)
+    UpdateUser(ctx context.Context, user *User) error
+    DeleteUser(ctx context.Context, id string) error
+    ListUsers(ctx context.Context, query *UserQuery) ([]*User, int64, error)
+}
+
+type UserRepository interface {
+    Create(ctx context.Context, user *User) error
+    GetByID(ctx context.Context, id string) (*User, error)
+    Update(ctx context.Context, user *User) error
+    Delete(ctx context.Context, id string) error
+    List(ctx context.Context, query *UserQuery) ([]*User, int64, error)
+}
+```
+
+## 5. 业务逻辑规范
+
+### 5.1 参数验证规范
+```go
+// 参数验证规范
+type CreateUserRequest struct {
+    Username string `json:"username" binding:"required,min=3,max=20"`
+    Email    string `json:"email" binding:"required,email"`
+    Password string `json:"password" binding:"required,min=6,max=20"`
+    Phone    string `json:"phone" binding:"omitempty,len=11"`
+}
+
+// 业务验证
+func (s *UserService) CreateUser(ctx context.Context, req *CreateUserRequest) (*User, error) {
+    // 1. 参数验证
+    if err := s.validateCreateUserRequest(req); err != nil {
+        return nil, err
+    }
+    
+    // 2. 业务规则验证
+    if err := s.validateBusinessRules(req); err != nil {
+        return nil, err
+    }
+    
+    // 3. 数据转换
+    user := s.convertToUser(req)
+    
+    // 4. 保存数据
+    if err := s.userRepo.Create(ctx, user); err != nil {
+        return nil, err
+    }
+    
+    return user, nil
+}
+```
+
+### 5.2 事务处理规范
+```go
+// 事务处理规范
+func (s *UserService) CreateUserWithProfile(ctx context.Context, req *CreateUserRequest) (*User, error) {
+    return s.db.Transaction(func(tx *gorm.DB) error {
+        // 1. 创建用户
+        user := s.convertToUser(req)
+        if err := s.userRepo.CreateWithTx(ctx, tx, user); err != nil {
+            return err
+        }
+        
+        // 2. 创建用户资料
+        profile := &UserProfile{
+            UserID: user.ID,
+            // ... 其他字段
+        }
+        if err := s.profileRepo.CreateWithTx(ctx, tx, profile); err != nil {
+            return err
+        }
+        
+        return nil
+    })
+}
+```
+
+## 6. 最佳实践
+
+### 6.1 错误处理最佳实践
+- **统一错误处理**: 使用统一的错误处理机制
+- **错误分类**: 根据错误类型采用不同的处理策略
+- **错误日志**: 记录详细的错误日志信息
+- **用户友好**: 向用户提供友好的错误信息
+
+### 6.2 性能优化最佳实践
+- **数据库优化**: 使用索引、分页、缓存等优化数据库查询
+- **并发处理**: 合理使用goroutine和channel
+- **资源管理**: 及时释放资源，避免内存泄漏
+- **监控告警**: 监控系统性能，及时发现问题
+
+### 6.3 安全最佳实践
+- **输入验证**: 严格验证所有输入参数
+- **权限控制**: 实现细粒度的权限控制
+- **数据加密**: 对敏感数据进行加密存储
+- **审计日志**: 记录重要的操作日志

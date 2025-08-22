@@ -1,12 +1,18 @@
-# 3. 依赖注入容器实现
+---
+description:
+globs:
+alwaysApply: false
+---
 
-## 3.1 概述
+# 依赖注入容器实现
+
+## 1 概述
 
 使用依赖注入方式来初始化 server.go，提供灵活的依赖管理和解耦能力。
 
-## 3.2 容器实现
+## 2 容器实现
 
-### 3.2.1 container.go 
+### 2.1 container.go 
 使用简单的容器来管理依赖注入
 
 ```go
@@ -73,9 +79,9 @@ func (c *Container) Populate() error {
 }
 ```
 
-## 3.3 Service 实现示例
+## 3 Service 实现示例
 
-### 3.3.1 初始化 application service实例
+### 3.1 初始化 application service实例
 
 ```go
 // 在server初始化中
@@ -88,7 +94,7 @@ if err := s.beanContainer.Provides(service.InitServiceBean()...); nil != err {
 }
 ```
 
-### 3.3.2 服务实现
+### 3.2 服务实现
 
 **pkg/domain/service/application.go**
 ```go
@@ -113,46 +119,9 @@ func InitServiceBean() []interface{} {
 }
 ```
 
-## 3.4 API 初始化示例
+## 4 API 初始化示例
 
-### 3.4.1 API接口定义
-
-**pkg/api/interface.go**
-```go
-package api
-
-import (
-	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
-)
-
-var registeredAPIInterfaces []APIInterface
-var registerValidationInterfaces map[string]validator.Func
-
-type APIInterface interface {
-	InitAPIServiceRoute(rg *gin.RouterGroup)
-}
-
-// RegisterAPIInterface register APIInterface
-func RegisterAPIInterface(api APIInterface) {
-	registeredAPIInterfaces = append(registeredAPIInterfaces, api)
-}
-
-func GetRegisterAPIInterfaces() []APIInterface {
-	return registeredAPIInterfaces
-}
-
-// InitAPI convert APIinterface to beans type
-func InitAPI() []interface{} {
-	var beans []interface{}
-	for i := range registeredAPIInterfaces {
-		beans = append(beans, registeredAPIInterfaces[i])
-	}
-	return beans
-}
-```
-
-### 3.4.2 API应用实现
+### 4.2 API应用实现
 
 **pkg/api/application.go**
 ```go
@@ -181,7 +150,6 @@ func init() {
 
 type application struct {
 	ApplicationService service.ApplicationService `inject:""`
-	VariablesService   service.VariablesService   `inject:""`
 }
 
 func newApplication() APIInterface {
@@ -189,7 +157,7 @@ func newApplication() APIInterface {
 }
 ```
 
-### 3.4.3 API初始化
+### 4.3 API初始化
 ```go
 // init route api
 if err := s.beanContainer.Provides(api.InitAPI()...); nil != err {
@@ -200,19 +168,20 @@ if err := s.beanContainer.Populate(); err != nil {
 }
 ```
 
-## 3.5 使用最佳实践
+## 5 使用最佳实践
 
-### 3.5.1 依赖注册顺序
-1. 先注册基础设施组件（数据库、缓存等）
-2. 再注册领域服务
-3. 最后注册API层组件
-4. 调用Populate()完成依赖注入
+### 5.1 依赖注册顺序
+1. 先注册工具类实现（config，logger，errror等）
+2. 再注册基础设施组件（数据库、缓存等）
+3. 再注册领域服务
+4. 最后注册API层组件
+5. 调用Populate()完成依赖注入
 
-### 3.5.2 错误处理
+### 5.2 错误处理
 - 注册失败时返回详细错误信息
 - 依赖注入失败时提供清晰的错误提示
 - 记录依赖注入的耗时信息
 
-### 3.5.3 线程安全
+### 5.3 线程安全
 - 使用读写锁保证容器的线程安全
 - 支持并发注册和获取依赖

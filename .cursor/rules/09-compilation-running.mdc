@@ -1,3 +1,9 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
 # 7. 编译和运行
 
 ## 7.1 概述

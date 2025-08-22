@@ -1,0 +1,619 @@
+# Web安全规范
+
+## 1. 概述
+
+本文档定义了 HTTP API 的安全规范，包括认证、授权、输入验证、数据保护、传输安全等各个方面的安全标准和最佳实践。
+
+## 2. 基础安全规范
+
+### 2.1 安全中间件基础
+```go
+// SecurityMiddleware 基础安全中间件
+func SecurityMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 基础安全处理逻辑
+        // 可以根据具体需求实现自定义的安全检查
+        
+        c.Next()
+    }
+}
+```
+
+### 2.2 访问控制基础
+```go
+// AccessControl 基础访问控制中间件
+func AccessControl() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 基础访问控制逻辑
+        // 可以根据具体需求实现自定义的访问控制
+        
+        c.Next()
+    }
+}
+```
+
+## 3. 输入验证安全规范
+
+### 3.1 参数验证
+
+#### 3.1.1 请求结构体验证
+```go
+// 用户创建请求
+type CreateUserRequest struct {
+    Username string `json:"username" binding:"required,min=3,max=50,alphanum"`
+    Email    string `json:"email" binding:"required,email"`
+    Password string `json:"password" binding:"required,min=8,containsany=!@#$%^&*"`
+    Age      int    `json:"age" binding:"gte=0,lte=150"`
+    Phone    string `json:"phone" binding:"omitempty,phone"`
+}
+
+// 自定义验证器
+func RegisterCustomValidators(v *validator.Validate) {
+    v.RegisterValidation("phone", validatePhone)
+    v.RegisterValidation("username", validateUsername)
+    v.RegisterValidation("password", validatePassword)
+}
+
+// 手机号验证
+func validatePhone(fl validator.FieldLevel) bool {
+    phone := fl.Field().String()
+    if phone == "" {
+        return true // 允许空值
+    }
+    
+    // 中国手机号验证
+    pattern := `^1[3-9]\d{9}$`
+    matched, _ := regexp.MatchString(pattern, phone)
+    return matched
+}
+
+// 用户名验证
+func validateUsername(fl validator.FieldLevel) bool {
+    username := fl.Field().String()
+    pattern := `^[a-zA-Z0-9_-]+$`
+    matched, _ := regexp.MatchString(pattern, username)
+    return matched
+}
+
+// 密码强度验证
+func validatePassword(fl validator.FieldLevel) bool {
+    password := fl.Field().String()
+    
+    // 至少包含一个大写字母、一个小写字母、一个数字和一个特殊字符
+    hasUpper := regexp.MustCompile(`[A-Z]`).MatchString(password)
+    hasLower := regexp.MustCompile(`[a-z]`).MatchString(password)
+    hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
+    hasSpecial := regexp.MustCompile(`[!@#$%^&*]`).MatchString(password)
+    
+    return hasUpper && hasLower && hasNumber && hasSpecial
+}
+```
+
+#### 3.1.2 SQL 注入防护
+```go
+// 安全的数据库查询
+func (h *DataHandler) GetDataByID(c *gin.Context) {
+    dataID := c.Param("id")
+    
+    // 验证数据ID格式
+    if !isValidUUID(dataID) {
+        response.Error(c, http.StatusBadRequest, "无效的数据ID", nil)
+        return
+    }
+    
+    // 使用参数化查询
+    data, err := h.dataService.GetDataByID(c.Request.Context(), dataID)
+    if err != nil {
+        if errors.Is(err, domain.ErrDataNotFound) {
+            response.Error(c, http.StatusNotFound, "数据不存在", err)
+        } else {
+            response.Error(c, http.StatusInternalServerError, "获取数据失败", err)
+        }
+        return
+    }
+    
+    response.Success(c, data)
+}
+
+// UUID 验证
+func isValidUUID(uuid string) bool {
+    pattern := `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+    matched, _ := regexp.MatchString(pattern, uuid)
+    return matched
+}
+```
+
+### 3.2 文件上传安全
+
+#### 3.2.1 文件上传验证
+```go
+// 文件上传配置
+const (
+    MaxFileSize = 10 * 1024 * 1024 // 10MB
+    AllowedImageTypes = "image/jpeg,image/png,image/gif"
+    AllowedDocumentTypes = "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
+
+// FileUploadMiddleware 文件上传安全中间件
+func FileUploadMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        file, header, err := c.Request.FormFile("file")
+        if err != nil {
+            response.Error(c, http.StatusBadRequest, "文件上传失败", err)
+            c.Abort()
+            return
+        }
+        defer file.Close()
+
+        // 1. 检查文件大小
+        if header.Size > MaxFileSize {
+            response.Error(c, http.StatusBadRequest, "文件大小超过限制", nil)
+            c.Abort()
+            return
+        }
+
+        // 2. 检查文件类型
+        contentType := header.Header.Get("Content-Type")
+        if !isAllowedFileType(contentType) {
+            response.Error(c, http.StatusBadRequest, "不支持的文件类型", nil)
+            c.Abort()
+            return
+        }
+
+        // 3. 检查文件扩展名
+        if !isAllowedFileExtension(header.Filename) {
+            response.Error(c, http.StatusBadRequest, "不支持的文件扩展名", nil)
+            c.Abort()
+            return
+        }
+
+        // 4. 生成安全的文件名
+        safeFileName := generateSafeFileName(header.Filename)
+        
+        c.Set("safe_file_name", safeFileName)
+        c.Next()
+    }
+}
+
+// 检查允许的文件类型
+func isAllowedFileType(contentType string) bool {
+    allowedTypes := strings.Split(AllowedImageTypes+","+AllowedDocumentTypes, ",")
+    for _, t := range allowedTypes {
+        if strings.TrimSpace(t) == contentType {
+            return true
+        }
+    }
+    return false
+}
+
+// 检查允许的文件扩展名
+func isAllowedFileExtension(filename string) bool {
+    ext := strings.ToLower(filepath.Ext(filename))
+    allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".pdf", ".doc", ".docx"}
+    
+    for _, allowedExt := range allowedExts {
+        if ext == allowedExt {
+            return true
+        }
+    }
+    return false
+}
+
+// 生成安全的文件名
+func generateSafeFileName(originalName string) string {
+    ext := filepath.Ext(originalName)
+    safeName := uuid.New().String() + ext
+    return safeName
+}
+```
+
+## 4. 认证和授权
+
+### 4.1 JWT 认证
+
+#### 4.1.1 JWT 中间件
+```go
+// JWTAuthMiddleware JWT认证中间件
+func JWTAuthMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 从请求头获取token
+        token := c.GetHeader("Authorization")
+        if token == "" {
+            response.Error(c, http.StatusUnauthorized, "未提供认证令牌", nil)
+            c.Abort()
+            return
+        }
+        
+        // 移除Bearer前缀
+        if strings.HasPrefix(token, "Bearer ") {
+            token = token[7:]
+        }
+        
+        // 验证JWT token
+        claims, err := validateJWTToken(token)
+        if err != nil {
+            response.Error(c, http.StatusUnauthorized, "认证令牌无效", err)
+            c.Abort()
+            return
+        }
+        
+        // 将用户信息设置到上下文
+        c.Set("user_id", claims.UserID)
+        c.Set("user_role", claims.Role)
+        c.Set("user_permissions", claims.Permissions)
+        
+        c.Next()
+    }
+}
+
+// JWTClaims JWT声明结构
+type JWTClaims struct {
+    UserID       string   `json:"user_id"`
+    Username     string   `json:"username"`
+    Role         string   `json:"role"`
+    Permissions  []string `json:"permissions"`
+    ExpiresAt    int64    `json:"exp"`
+    IssuedAt     int64    `json:"iat"`
+    Issuer       string   `json:"iss"`
+}
+
+// 验证JWT token
+func validateJWTToken(tokenString string) (*JWTClaims, error) {
+    token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+        // 验证签名方法
+        if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+            return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+        }
+        return []byte(jwtSecret), nil
+    })
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    if claims, ok := token.Claims.(*JWTClaims); ok && token.Valid {
+        return claims, nil
+    }
+    
+    return nil, fmt.Errorf("invalid token")
+}
+```
+
+#### 4.1.2 角色授权中间件
+```go
+// RequireRole 角色授权中间件
+func RequireRole(roles ...string) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userRole, exists := c.Get("user_role")
+        if !exists {
+            response.Error(c, http.StatusForbidden, "权限不足", nil)
+            c.Abort()
+            return
+        }
+        
+        // 检查用户角色是否在允许的角色列表中
+        hasRole := false
+        for _, role := range roles {
+            if userRole == role {
+                hasRole = true
+                break
+            }
+        }
+        
+        if !hasRole {
+            response.Error(c, http.StatusForbidden, "权限不足", nil)
+            c.Abort()
+            return
+        }
+        
+        c.Next()
+    }
+}
+
+// RequirePermission 权限授权中间件
+func RequirePermission(permissions ...string) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userPermissions, exists := c.Get("user_permissions")
+        if !exists {
+            response.Error(c, http.StatusForbidden, "权限不足", nil)
+            c.Abort()
+            return
+        }
+        
+        // 检查用户权限
+        userPerms, ok := userPermissions.([]string)
+        if !ok {
+            response.Error(c, http.StatusForbidden, "权限不足", nil)
+            c.Abort()
+            return
+        }
+        
+        // 检查是否有所需权限
+        hasPermission := false
+        for _, requiredPerm := range permissions {
+            for _, userPerm := range userPerms {
+                if userPerm == requiredPerm {
+                    hasPermission = true
+                    break
+                }
+            }
+            if hasPermission {
+                break
+            }
+        }
+        
+        if !hasPermission {
+            response.Error(c, http.StatusForbidden, "权限不足", nil)
+            c.Abort()
+            return
+        }
+        
+        c.Next()
+    }
+}
+```
+
+## 5. 安全响应头
+
+### 5.1 安全响应头中间件
+```go
+// SecurityHeadersMiddleware 安全响应头中间件
+func SecurityHeadersMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 防止点击劫持
+        c.Header("X-Frame-Options", "DENY")
+        
+        // 防止MIME类型嗅探
+        c.Header("X-Content-Type-Options", "nosniff")
+        
+        // XSS保护
+        c.Header("X-XSS-Protection", "1; mode=block")
+        
+        // 严格传输安全
+        c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        
+        // 内容安全策略
+        c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+        
+        // 引用策略
+        c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+        
+        // 权限策略
+        c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        
+        c.Next()
+    }
+}
+```
+
+## 6. 限流和防护
+
+### 6.1 限流中间件
+```go
+// RateLimitMiddleware 限流中间件
+func RateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc {
+    limiter := rate.NewLimiter(rate.Every(window), limit)
+    
+    return func(c *gin.Context) {
+        // 获取客户端标识
+        clientID := getClientID(c)
+        
+        // 检查限流
+        if !limiter.Allow() {
+            response.Error(c, http.StatusTooManyRequests, "请求频率超限", nil)
+            c.Abort()
+            return
+        }
+        
+        c.Next()
+    }
+}
+
+// 获取客户端标识
+func getClientID(c *gin.Context) string {
+    // 优先使用X-Forwarded-For
+    if forwardedFor := c.GetHeader("X-Forwarded-For"); forwardedFor != "" {
+        return strings.Split(forwardedFor, ",")[0]
+    }
+    
+    // 使用X-Real-IP
+    if realIP := c.GetHeader("X-Real-IP"); realIP != "" {
+        return realIP
+    }
+    
+    // 使用RemoteAddr
+    return c.ClientIP()
+}
+```
+
+### 6.2 CSRF 防护
+```go
+// CSRFMiddleware CSRF防护中间件
+func CSRFMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 只对非GET请求进行CSRF检查
+        if c.Request.Method == "GET" {
+            c.Next()
+            return
+        }
+        
+        // 检查CSRF token
+        csrfToken := c.GetHeader("X-CSRF-Token")
+        if csrfToken == "" {
+            response.Error(c, http.StatusForbidden, "缺少CSRF令牌", nil)
+            c.Abort()
+            return
+        }
+        
+        // 验证CSRF token
+        if !validateCSRFToken(c, csrfToken) {
+            response.Error(c, http.StatusForbidden, "CSRF令牌无效", nil)
+            c.Abort()
+            return
+        }
+        
+        c.Next()
+    }
+}
+
+// 验证CSRF token
+func validateCSRFToken(c *gin.Context, token string) bool {
+    // 从session中获取存储的token
+    sessionToken, exists := c.Get("csrf_token")
+    if !exists {
+        return false
+    }
+    
+    return token == sessionToken
+}
+```
+
+## 7. 数据加密和脱敏
+
+### 7.1 敏感数据脱敏
+```go
+// 数据脱敏函数
+func maskPhone(phone string) string {
+    if len(phone) < 7 {
+        return phone
+    }
+    return phone[:3] + "****" + phone[len(phone)-4:]
+}
+
+func maskEmail(email string) string {
+    parts := strings.Split(email, "@")
+    if len(parts) != 2 {
+        return email
+    }
+    
+    username := parts[0]
+    domain := parts[1]
+    
+    if len(username) <= 2 {
+        return email
+    }
+    
+    maskedUsername := username[:1] + "***" + username[len(username)-1:]
+    return maskedUsername + "@" + domain
+}
+
+func maskIDCard(idCard string) string {
+    if len(idCard) < 8 {
+        return idCard
+    }
+    return idCard[:4] + "********" + idCard[len(idCard)-4:]
+}
+```
+
+### 7.2 数据加密
+```go
+// 数据加密函数
+func encryptSensitiveData(data string) (string, error) {
+    block, err := aes.NewCipher([]byte(encryptionKey))
+    if err != nil {
+        return "", err
+    }
+    
+    ciphertext := make([]byte, aes.BlockSize+len(data))
+    iv := ciphertext[:aes.BlockSize]
+    if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+        return "", err
+    }
+    
+    stream := cipher.NewCFBEncrypter(block, iv)
+    stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(data))
+    
+    return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// 数据解密函数
+func decryptSensitiveData(encryptedData string) (string, error) {
+    ciphertext, err := base64.StdEncoding.DecodeString(encryptedData)
+    if err != nil {
+        return "", err
+    }
+    
+    block, err := aes.NewCipher([]byte(encryptionKey))
+    if err != nil {
+        return "", err
+    }
+    
+    if len(ciphertext) < aes.BlockSize {
+        return "", fmt.Errorf("ciphertext too short")
+    }
+    
+    iv := ciphertext[:aes.BlockSize]
+    ciphertext = ciphertext[aes.BlockSize:]
+    
+    stream := cipher.NewCFBDecrypter(block, iv)
+    stream.XORKeyStream(ciphertext, ciphertext)
+    
+    return string(ciphertext), nil
+}
+```
+
+## 8. 安全日志
+
+### 8.1 安全事件日志
+```go
+// SecurityLogger 安全日志记录器
+type SecurityLogger struct {
+    logger *logrus.Logger
+}
+
+// LogSecurityEvent 记录安全事件
+func (sl *SecurityLogger) LogSecurityEvent(c *gin.Context, eventType, description string, severity string) {
+    fields := logrus.Fields{
+        "event_type":   eventType,
+        "description":  description,
+        "severity":     severity,
+        "client_ip":    getClientIP(c),
+        "user_agent":   c.GetHeader("User-Agent"),
+        "request_id":   c.GetString("request_id"),
+        "user_id":      c.GetString("user_id"),
+        "timestamp":    time.Now().UTC(),
+    }
+    
+    switch severity {
+    case "high":
+        sl.logger.WithFields(fields).Error("安全事件")
+    case "medium":
+        sl.logger.WithFields(fields).Warn("安全事件")
+    case "low":
+        sl.logger.WithFields(fields).Info("安全事件")
+    default:
+        sl.logger.WithFields(fields).Info("安全事件")
+    }
+}
+
+// 获取客户端IP
+func getClientIP(c *gin.Context) string {
+    if forwardedFor := c.GetHeader("X-Forwarded-For"); forwardedFor != "" {
+        return strings.Split(forwardedFor, ",")[0]
+    }
+    if realIP := c.GetHeader("X-Real-IP"); realIP != "" {
+        return realIP
+    }
+    return c.ClientIP()
+}
+```
+
+## 9. 最佳实践
+
+### 9.1 输入验证最佳实践
+- **严格验证**: 对所有输入进行严格验证
+- **白名单**: 使用白名单而不是黑名单
+- **类型检查**: 确保数据类型正确
+- **长度限制**: 限制输入长度
+
+### 9.2 认证授权最佳实践
+- **强密码**: 要求强密码策略
+- **多因素认证**: 支持多因素认证
+- **会话管理**: 合理管理会话生命周期
+- **权限最小化**: 遵循最小权限原则
+
+### 9.3 数据保护最佳实践
+- **加密传输**: 使用HTTPS传输敏感数据
+- **数据脱敏**: 对敏感数据进行脱敏处理
+- **访问控制**: 严格控制数据访问权限
+- **审计日志**: 记录所有数据访问操作

@@ -1,0 +1,22 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# API规范
+
+## 1. http framework 规范
+
+@.cursor/rules/04-api/401-gin-framework-specification.mdc
+
+## 2. api request respone 规范
+
+@.cursor/rules/03-infra/402-request-response.mdc
+
+## 3. web security 规范
+
+@.cursor/rules/03-infra/403-web-security.mdc
+
+## 4. api 文档规范
+
+@.cursor/rules/03-infra/404-api-documentation.mdc

@@ -1,0 +1,357 @@
+# 中间件架构规范
+
+## 1. 概述
+
+本规范定义了Go HTTP Server项目的中间件架构设计，包括中间件的设计原则、分类、实现和使用规范。
+
+## 2. 中间件设计原则
+
+### 2.1 单一职责原则
+- 每个中间件只负责一个特定功能
+- 避免在中间件中混合多个职责
+- 保持中间件的简洁性和可测试性
+
+### 2.2 可组合性原则
+- 中间件应该可以自由组合
+- 支持链式调用和嵌套使用
+- 提供灵活的配置选项
+
+### 2.3 性能原则
+- 中间件应该高效执行
+- 避免不必要的计算和内存分配
+- 支持异步处理和并发安全
+
+## 3. 中间件分类
+
+### 3.1 基础中间件
+- **日志中间件**: 记录请求日志
+- **错误处理中间件**: 统一错误处理
+- **CORS中间件**: 跨域资源共享
+- **请求ID中间件**: 生成和传递请求ID
+
+### 3.2 安全中间件
+- **认证中间件**: 用户身份验证
+- **授权中间件**: 权限控制
+- **限流中间件**: 请求频率限制
+- **安全头中间件**: 安全响应头设置
+
+### 3.3 性能中间件
+- **压缩中间件**: 响应压缩
+- **缓存中间件**: 响应缓存
+- **超时中间件**: 请求超时控制
+- **监控中间件**: 性能指标收集
+
+### 3.4 业务中间件
+- **国际化中间件**: 多语言支持
+- **参数验证中间件**: 请求参数验证
+- **业务日志中间件**: 业务操作日志
+- **审计中间件**: 操作审计记录
+
+## 4. 中间件接口设计
+
+### 4.1 基础接口
+```go
+// Middleware 中间件接口
+type Middleware interface {
+    // Handle 处理请求
+    Handle(ctx context.Context, req *http.Request, next Handler) (*http.Response, error)
+    
+    // Name 中间件名称
+    Name() string
+    
+    // Priority 中间件优先级
+    Priority() int
+}
+
+// Handler 处理器接口
+type Handler interface {
+    Handle(ctx context.Context, req *http.Request) (*http.Response, error)
+}
+
+// Chain 中间件链
+type Chain struct {
+    middlewares []Middleware
+}
+
+// Use 添加中间件
+func (c *Chain) Use(middleware Middleware) *Chain
+
+// Handle 执行中间件链
+func (c *Chain) Handle(ctx context.Context, req *http.Request) (*http.Response, error)
+```
+
+### 4.2 Gin中间件适配
+```go
+// GinMiddleware Gin中间件适配器
+func GinMiddleware(middleware Middleware) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 创建上下文
+        ctx := c.Request.Context()
+        
+        // 执行中间件
+        resp, err := middleware.Handle(ctx, c.Request, &ginHandler{c})
+        if err != nil {
+            c.Error(err)
+            return
+        }
+        
+        // 处理响应
+        if resp != nil {
+            c.DataFromReader(resp.StatusCode, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
+        }
+    }
+}
+
+type ginHandler struct {
+    c *gin.Context
+}
+
+func (h *ginHandler) Handle(ctx context.Context, req *http.Request) (*http.Response, error) {
+    h.c.Next()
+    return nil, nil
+}
+```
+
+## 5. 核心中间件实现
+
+### 5.1 日志中间件
+```go
+// LoggerMiddleware 日志中间件
+type LoggerMiddleware struct {
+    logger Logger
+}
+
+func (m *LoggerMiddleware) Handle(ctx context.Context, req *http.Request, next Handler) (*http.Response, error) {
+    start := time.Now()
+    
+    // 生成请求ID
+    requestID := uuid.New().String()
+    ctx = context.WithValue(ctx, "request_id", requestID)
+    
+    // 记录请求日志
+    m.logger.WithContext(ctx).WithFields(logrus.Fields{
+        "method":      req.Method,
+        "path":        req.URL.Path,
+        "remote_addr": req.RemoteAddr,
+        "user_agent":  req.UserAgent(),
+    }).Info("HTTP请求开始")
+    
+    // 执行下一个处理器
+    resp, err := next.Handle(ctx, req)
+    
+    // 记录响应日志
+    duration := time.Since(start)
+    m.logger.WithContext(ctx).WithFields(logrus.Fields{
+        "duration":    duration.Milliseconds(),
+        "status_code": getStatusCode(resp, err),
+    }).Info("HTTP请求完成")
+    
+    return resp, err
+}
+```
+
+### 5.2 错误处理中间件
+```go
+// ErrorHandlerMiddleware 错误处理中间件
+type ErrorHandlerMiddleware struct {
+    errorHandler ErrorHandler
+}
+
+func (m *ErrorHandlerMiddleware) Handle(ctx context.Context, req *http.Request, next Handler) (*http.Response, error) {
+    defer func() {
+        if r := recover(); r != nil {
+            m.errorHandler.HandlePanic(ctx, r)
+        }
+    }()
+    
+    resp, err := next.Handle(ctx, req)
+    if err != nil {
+        return m.errorHandler.HandleError(ctx, err)
+    }
+    
+    return resp, nil
+}
+```
+
+### 5.3 认证中间件
+```go
+// AuthMiddleware 认证中间件
+type AuthMiddleware struct {
+    authService AuthService
+}
+
+func (m *AuthMiddleware) Handle(ctx context.Context, req *http.Request, next Handler) (*http.Response, error) {
+    // 提取认证信息
+    token := extractToken(req)
+    if token == "" {
+        return nil, errors.New("未提供认证令牌")
+    }
+    
+    // 验证令牌
+    user, err := m.authService.ValidateToken(ctx, token)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 将用户信息添加到上下文
+    ctx = context.WithValue(ctx, "user", user)
+    
+    return next.Handle(ctx, req)
+}
+```
+
+### 5.4 限流中间件
+```go
+// RateLimitMiddleware 限流中间件
+type RateLimitMiddleware struct {
+    limiter RateLimiter
+}
+
+func (m *RateLimitMiddleware) Handle(ctx context.Context, req *http.Request, next Handler) (*http.Response, error) {
+    // 获取客户端标识
+    clientID := getClientID(req)
+    
+    // 检查限流
+    if !m.limiter.Allow(clientID) {
+        return nil, errors.New("请求频率超限")
+    }
+    
+    return next.Handle(ctx, req)
+}
+```
+
+## 6. 中间件配置
+
+### 6.1 配置结构
+```go
+// MiddlewareConfig 中间件配置
+type MiddlewareConfig struct {
+    // 日志中间件配置
+    Logger struct {
+        Enabled bool   `json:"enabled"`
+        Level   string `json:"level"`
+        Format  string `json:"format"`
+    } `json:"logger"`
+    
+    // 认证中间件配置
+    Auth struct {
+        Enabled bool   `json:"enabled"`
+        Type    string `json:"type"`
+        Secret  string `json:"secret"`
+    } `json:"auth"`
+    
+    // 限流中间件配置
+    RateLimit struct {
+        Enabled bool `json:"enabled"`
+        Limit   int  `json:"limit"`
+        Window  int  `json:"window"`
+    } `json:"rate_limit"`
+    
+    // CORS中间件配置
+    CORS struct {
+        Enabled         bool     `json:"enabled"`
+        AllowedOrigins  []string `json:"allowed_origins"`
+        AllowedMethods  []string `json:"allowed_methods"`
+        AllowedHeaders  []string `json:"allowed_headers"`
+        AllowCredentials bool    `json:"allow_credentials"`
+    } `json:"cors"`
+}
+```
+
+### 6.2 中间件注册
+```go
+// RegisterMiddlewares 注册中间件
+func RegisterMiddlewares(engine *gin.Engine, config *MiddlewareConfig) {
+    // 注册基础中间件
+    if config.Logger.Enabled {
+        engine.Use(GinMiddleware(NewLoggerMiddleware(config.Logger)))
+    }
+    
+    // 注册安全中间件
+    if config.Auth.Enabled {
+        engine.Use(GinMiddleware(NewAuthMiddleware(config.Auth)))
+    }
+    
+    if config.RateLimit.Enabled {
+        engine.Use(GinMiddleware(NewRateLimitMiddleware(config.RateLimit)))
+    }
+    
+    // 注册CORS中间件
+    if config.CORS.Enabled {
+        engine.Use(GinMiddleware(NewCORSMiddleware(config.CORS)))
+    }
+    
+    // 注册错误处理中间件（最后注册）
+    engine.Use(GinMiddleware(NewErrorHandlerMiddleware()))
+}
+```
+
+## 7. 中间件测试
+
+### 7.1 单元测试
+```go
+func TestLoggerMiddleware(t *testing.T) {
+    // 创建测试中间件
+    middleware := NewLoggerMiddleware(LoggerConfig{})
+    
+    // 创建测试请求
+    req := httptest.NewRequest("GET", "/test", nil)
+    ctx := context.Background()
+    
+    // 创建模拟处理器
+    handler := &mockHandler{}
+    
+    // 执行中间件
+    resp, err := middleware.Handle(ctx, req, handler)
+    
+    // 验证结果
+    assert.NoError(t, err)
+    assert.NotNil(t, resp)
+    assert.True(t, handler.called)
+}
+```
+
+### 7.2 集成测试
+```go
+func TestMiddlewareChain(t *testing.T) {
+    // 创建中间件链
+    chain := NewChain()
+    chain.Use(NewLoggerMiddleware(LoggerConfig{}))
+    chain.Use(NewAuthMiddleware(AuthConfig{}))
+    
+    // 创建测试请求
+    req := httptest.NewRequest("GET", "/test", nil)
+    ctx := context.Background()
+    
+    // 执行中间件链
+    resp, err := chain.Handle(ctx, req)
+    
+    // 验证结果
+    assert.NoError(t, err)
+    assert.NotNil(t, resp)
+}
+```
+
+## 8. 最佳实践
+
+### 8.1 中间件设计最佳实践
+- **单一职责**: 每个中间件只负责一个功能
+- **可配置性**: 提供灵活的配置选项
+- **错误处理**: 妥善处理中间件中的错误
+- **性能考虑**: 避免在中间件中执行昂贵操作
+
+### 8.2 中间件使用最佳实践
+- **顺序安排**: 合理安排中间件的执行顺序
+- **条件使用**: 根据路由和条件选择性使用中间件
+- **监控告警**: 监控中间件的性能和错误
+- **文档维护**: 及时更新中间件的使用文档
+
+### 8.3 性能优化最佳实践
+- **异步处理**: 在适当场景下使用异步处理
+- **缓存机制**: 使用缓存减少重复计算
+- **资源管理**: 及时释放中间件中的资源
+- **并发安全**: 确保中间件的并发安全性
+description:
+globs:
+alwaysApply: false
+---
