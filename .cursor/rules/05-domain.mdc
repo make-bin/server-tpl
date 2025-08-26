@@ -1,0 +1,10 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+# 减少IO： SQL 合并
+# 拒绝复杂SQL，拒绝jion，使用简单的查询，降低数据库压力
+# 时间复杂度,空间复杂度
+# 

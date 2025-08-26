@@ -1,0 +1,187 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+# 依赖注入容器实现
+
+## 1 概述
+
+使用依赖注入方式来初始化 server.go，提供灵活的依赖管理和解耦能力。
+
+## 2 容器实现
+
+### 2.1 container.go 
+使用简单的容器来管理依赖注入
+
+```go
+package container
+import (
+	"fmt"
+	"time"
+	"sync"
+)
+
+type Container struct {
+	beans map[string]interface{}
+	mu    sync.RWMutex
+}
+
+func NewContainer() *Container {
+	return &Container{
+		beans: make(map[string]interface{}),
+	}
+}
+
+// Provides 提供多个bean
+func (c *Container) Provides(beans ...interface{}) error {
+	for _, bean := range beans {
+		if err := c.ProvideWithName("", bean); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ProvideWithName 提供带名称的bean
+func (c *Container) ProvideWithName(name string, bean interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	if name == "" {
+		name = fmt.Sprintf("%T", bean)
+	}
+	
+	c.beans[name] = bean
+	return nil
+}
+
+// Get 获取bean
+func (c *Container) Get(name string) (interface{}, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	bean, exists := c.beans[name]
+	return bean, exists
+}
+
+// Populate 填充依赖字段
+func (c *Container) Populate() error {
+	start := time.Now()
+	defer func() {
+		fmt.Printf("[INFO]populate the bean container take time %s\n", time.Since(start))
+	}()
+	
+	// 这里可以实现更复杂的依赖注入逻辑
+	// 目前只是简单的注册
+	return nil
+}
+```
+
+## 3 Service 实现示例
+
+### 3.1 初始化 application service实例
+
+```go
+// 在server初始化中
+if err := s.beanContainer.ProvideWithName("datastore", s.dataStore); err != nil {
+	return fmt.Errorf("fail to provides the datastore bean to the container: %w", err)
+}
+// init domain service
+if err := s.beanContainer.Provides(service.InitServiceBean()...); nil != err {
+	return err
+}
+```
+
+### 3.2 服务实现
+
+**pkg/domain/service/application.go**
+```go
+type applicationService struct {
+	Store          datastore.DataStore          `inject:"datastore"`
+}
+
+func NewApplicationService() ApplicationService {
+	return &applicationService{}
+}
+```
+
+**pkg/domain/service/interface.go**
+```go
+package service
+
+// InitServiceBean convert service interface to bean type
+func InitServiceBean() []interface{} {
+	return []interface{}{
+		NewApplicationService(),
+	}
+}
+```
+
+## 4 API 初始化示例
+
+### 4.2 API应用实现
+
+**pkg/api/application.go**
+```go
+func init() {
+	RegisterAPIInterface(newApplication())
+	RegisterValidationInterface("namevalidator", func(fl validator.FieldLevel) bool {
+		name, ok := fl.Field().Interface().(string)
+		if ok {
+			if len(name) == 1 {
+				return unicode.IsLower([]rune(name)[0])
+			}
+			matched, _ := regexp.MatchString("^[a-z][a-z0-9-]*[a-z0-9]$", name)
+			return matched
+		}
+		return true
+	})
+	RegisterValidationInterface("versionvalidator", func(fl validator.FieldLevel) bool {
+		version, ok := fl.Field().Interface().(string)
+		if ok {
+			matched, _ := regexp.MatchString("^[^\u4e00-\u9fa5]+$", version)
+			return matched
+		}
+		return true
+	})
+}
+
+type application struct {
+	ApplicationService service.ApplicationService `inject:""`
+}
+
+func newApplication() APIInterface {
+	return &application{}
+}
+```
+
+### 4.3 API初始化
+```go
+// init route api
+if err := s.beanContainer.Provides(api.InitAPI()...); nil != err {
+	return err
+}
+if err := s.beanContainer.Populate(); err != nil {
+	return fmt.Errorf("fail to populate the bean container: %w", err)
+}
+```
+
+## 5 使用最佳实践
+
+### 5.1 依赖注册顺序
+1. 先注册工具类实现（config，logger，errror等）
+2. 再注册基础设施组件（数据库、缓存等）
+3. 再注册领域服务
+4. 最后注册API层组件
+5. 调用Populate()完成依赖注入
+
+### 5.2 错误处理
+- 注册失败时返回详细错误信息
+- 依赖注入失败时提供清晰的错误提示
+- 记录依赖注入的耗时信息
+
+### 5.3 线程安全
+- 使用读写锁保证容器的线程安全
+- 支持并发注册和获取依赖

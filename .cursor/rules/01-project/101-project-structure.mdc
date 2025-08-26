@@ -1,0 +1,177 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+# 1. 项目结构
+
+## 1.1 项目概述
+
+这是一个基于Go语言的HTTP服务器项目，采用分层架构设计，提供完整的Web服务解决方案。
+
+## 1.2 分层架构设计
+
+### 1.2.1 API层 (pkg/api/)
+- 处理HTTP请求和响应
+- 参数验证和错误处理
+- 路由定义和管理
+- HTTP中间件实现（Gin中间件）
+- 使用DTO进行数据传输
+- 调用领域服务
+
+### 1.2.2 领域层 (pkg/domain/)
+- 定义业务模型和实体
+- 实现核心业务逻辑
+- 定义服务接口
+- 业务规则和约束
+
+### 1.2.3 基础设施层 (pkg/infrastructure/)
+- 数据持久化实现
+- 外部服务集成（Redis、Kafka等）
+- 外部服务中间件实现
+
+### 1.2.4 工具层 (pkg/utils/)
+- 通用工具函数
+- 依赖注入容器
+- 配置管理
+- 日志管理
+- 错误处理
+- 业务错误码
+- 辅助功能
+
+## 1.3 目录结构
+
+```
+.
+├── cmd/                    # 应用程序入口点
+│   ├── main.go            # 主程序入口
+├── pkg/                   # 存放核心代码
+│   ├── server/            # 服务器实现
+│   │   └── server.go      # 服务server实现文件
+│   ├── api/               # HTTP API层
+│   │   ├── dto/v1/        # HTTP API body struct 实现
+│   │   ├── assembler/v1/  # HTTP API body structs 和 models struct 转换实现
+│   │   ├── router/        # HTTP路由实现
+│   │   │   └── router.go  # HTTP router 实现
+│   │   ├── middleware/    # HTTP中间件（Gin中间件）
+│   │   │   ├── error_handler.go
+│   │   │   ├── cors.go
+│   │   │   ├── logger.go
+│   │   │   └── recovery.go
+│   │   ├── application.go # API应用层实现
+│   │   └── interface.go   # API接口定义
+│   ├── domain/            # 领域层 - 核心业务逻辑实现
+│   │   ├── model/         # 数据模型定义
+│   │   │   ├── base.go    # 基础实体接口和结构
+│   │   │   ├── application.go # 应用模型
+│   │   └── service/       # 核心业务接口实现
+│   │       ├── interface.go # 服务接口定义
+│   │       ├── application.go # 应用服务实现
+│   ├── infrastructure/    # 基础设施层 - 数据库，外部服务等Client实现
+│   │   ├── datastore/     # ORM数据实现
+│   │   │   ├── interface.go # ORM抽象接口
+│   │   │   ├── factory/   # 存储工厂
+│   │   │   │   └── simple_factory.go # 简单工厂实现
+│   │   │   ├── postgresql/ # PostgreSQL实现
+│   │   │   │   └── postgresql.go
+│   │   │   ├── opengauss/ # OpenGauss实现
+│   │   │   │   └── opengauss.go
+│   │   │   ├── memory/    # 内存存储实现
+│   │   │   │   └── memory.go
+│   │   │   └── README.md  # 存储层文档
+│   │   └── middleware/    # 外部服务中间件（Redis、Prometheus等）
+│   │       ├── redis.go
+│   │       ├── prometheus.go
+│   │       └── prometheus_example.go
+│   ├── utils/             # 通用库工具实现
+│   │   ├── container/     # 依赖注入容器
+│   │   │   └── container.go
+│   │   ├── config/        # 配置管理
+│   │   │   └── config.go
+│   │   ├── logger/        # 日志管理
+│   │   │   └── logger.go
+│   │   ├── errors/        # 错误处理
+│   │   │   └── errors.go
+│   │   └── bcode/         # 业务错误码
+│   │       └── bcode.go
+│   └── e2e/               # 集成测试代码
+├── configs/               # 配置文件
+├── docs/                  # 文档（包含swagger api文件）
+├── deploy/                # 部署文件，通常基于kubernetes部署应用
+├── vendor/                # 依赖包缓存目录（本地缓存）
+├── .gitignore
+├── Makefile               # 编译相关文件
+├── go.mod                 # Go模块文件
+├── go.sum                 # Go依赖校验文件
+├── Dockerfile             # Docker容器化文件
+├── .golangci.yml          # Go代码检查配置
+└── README.md              # 项目说明文档
+```
+
+## 1.4 初始化核心代码结构
+### 1.4.1 初始化 api 接口实现
+pkg/api/interface.go
+```go
+package api
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+)
+
+var registeredAPIInterfaces []APIInterface
+
+var registerValidationInterfaces map[string]validator.Func
+
+type APIInterface interface {
+	InitAPIServiceRoute(rg *gin.RouterGroup)
+}
+
+// RegisterAPIInterface register APIInterface
+func RegisterAPIInterface(api APIInterface) {
+	registeredAPIInterfaces = append(registeredAPIInterfaces, api)
+}
+
+func GetRegisterAPIInterfaces() []APIInterface {
+	return registeredAPIInterfaces
+}
+
+// InitAPI convert APIinterface to beans type
+func InitAPI() []interface{} {
+	var beans []interface{}
+	for i := range registeredAPIInterfaces {
+		beans = append(beans, registeredAPIInterfaces[i])
+	}
+	return beans
+}
+
+// RegisterValidationInterface register validation function
+func RegisterValidationInterface(name string, fn validator.Func) {
+	if registerValidationInterfaces == nil {
+		registerValidationInterfaces = make(map[string]validator.Func)
+	}
+	registerValidationInterfaces[name] = fn
+}
+
+func GetRegisterValidationInterfaces() map[string]validator.Func {
+	return registerValidationInterfaces
+}
+
+func init() {
+	// Todo RegisterAPIInterface(newApplication())
+}
+```
+### 1.4.2 初始化domain service 接口
+pkg/domain/service/interface.go
+```go
+package service
+
+// InitServiceBean convert service interface to bean type
+func InitServiceBean() []interface{} {
+	return []interface{}{
+		// Todo NewApplicationService(),
+	}
+}
+```
+

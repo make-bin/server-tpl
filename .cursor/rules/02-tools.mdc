@@ -1,0 +1,31 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+# 工具层
+
+## 1. 配置管理
+@.cursor/rules/02-tools/201-config-management.mdc
+
+## 2. 日志管理
+@.cursor/rules/02-tools/202-log-management.mdc
+
+## 3. 错误管理
+@.cursor/rules/02-tools/203-error-handling.mdc
+
+## 4. 依赖注入
+@.cursor/rules/02-tools/204-dependency-injection.mdc
+
+## 5. Go PProf 调试
+@.cursor/rules/02-tools/205-go-pprof-debugging.mdc
+
+## 6. 国际化与本地化（i18n）
+@.cursor/rules/02-tools/206-i18n.mdc
+
+## 7. 业务错误码（bcode）
+@.cursor/rules/02-tools/207-bussiness-code.mdc
+
+## 8. Prometheus 监控
+@.cursor/rules/02-tools/208-prometheus-monitoring.mdc

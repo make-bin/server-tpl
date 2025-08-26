@@ -1,0 +1,349 @@
+
+# 错误处理规范
+
+## 1. 错误架构
+
+### 1.1 错误分类
+错误分类：
+1. 系统错误 - 系统级别的错误
+2. 业务错误 - 业务逻辑相关的错误
+3. 验证错误 - 输入验证失败的错误
+4. 网络错误 - 网络通信相关的错误
+5. 数据库错误 - 数据库操作相关的错误
+6. 外部服务错误 - 第三方服务调用错误
+
+### 1.2 错误层次
+错误处理层次：
+1. 应用层 - 处理业务逻辑错误
+2. 服务层 - 处理服务调用错误
+3. 数据层 - 处理数据访问错误
+4. 基础设施层 - 处理系统级错误
+
+## 2. 错误码定义
+
+### 2.1 错误码结构
+```go
+// 错误码定义
+const (
+    // 成功
+    Success = 200
+    
+    // 客户端错误 (1000-1999)
+    BadRequest           = 1000
+    Unauthorized         = 1001
+    Forbidden            = 1002
+    NotFound             = 1003
+    MethodNotAllowed     = 1004
+    Conflict             = 1005
+    UnprocessableEntity  = 1006
+    TooManyRequests      = 1007
+    
+    // 服务器错误 (2000-2999)
+    InternalServerError  = 2000
+    ServiceUnavailable   = 2001
+    GatewayTimeout       = 2002
+    DatabaseError        = 2003
+    CacheError           = 2004
+    
+    // 业务错误 (3000-3999)
+    UserNotFound         = 3001
+    UserAlreadyExists    = 3002
+    InvalidPassword      = 3003
+    UserDisabled         = 3004
+    TokenExpired         = 3005
+    TokenInvalid         = 3006
+    
+    // 应用错误 (4000-4999)
+    AppNotFound          = 4001
+    AppAlreadyExists     = 4002
+    AppDisabled          = 4003
+    AppVersionMismatch   = 4004
+    
+    // 资源错误 (5000-5999)
+    ResourceNotFound     = 5001
+    ResourceConflict     = 5002
+    ResourceLimitExceed  = 5003
+    ResourceUnavailable  = 5004
+)
+
+// Error 业务错误
+type Error struct {
+    Code       int                    `json:"code"`
+    Message    string                 `json:"message"`
+    Details    string                 `json:"details,omitempty"`
+    RequestID  string                 `json:"request_id,omitempty"`
+    Timestamp  string                 `json:"timestamp"`
+    Fields     map[string]interface{} `json:"fields,omitempty"`
+    StackTrace string                 `json:"stack_trace,omitempty"`
+}
+
+func (e *Error) Error() string {
+    return e.Message
+}
+```
+
+### 2.2 错误码映射
+```go
+// 错误码映射表
+var errorCodeMap = map[int]string{
+    // 客户端错误
+    BadRequest:          "请求参数错误",
+    Unauthorized:        "未授权访问",
+    Forbidden:           "禁止访问",
+    NotFound:            "资源不存在",
+    MethodNotAllowed:    "方法不允许",
+    Conflict:            "资源冲突",
+    UnprocessableEntity: "请求无法处理",
+    TooManyRequests:     "请求过于频繁",
+    
+    // 服务器错误
+    InternalServerError: "服务器内部错误",
+    ServiceUnavailable:  "服务不可用",
+    GatewayTimeout:      "网关超时",
+    DatabaseError:       "数据库错误",
+    CacheError:          "缓存错误",
+    
+    // 业务错误
+    UserNotFound:        "用户不存在",
+    UserAlreadyExists:   "用户已存在",
+    InvalidPassword:     "密码错误",
+    UserDisabled:        "用户已禁用",
+    TokenExpired:        "令牌已过期",
+    TokenInvalid:        "令牌无效",
+    
+    // 应用错误
+    AppNotFound:         "应用不存在",
+    AppAlreadyExists:    "应用已存在",
+    AppDisabled:         "应用已禁用",
+    AppVersionMismatch:  "应用版本不匹配",
+    
+    // 资源错误
+    ResourceNotFound:    "资源不存在",
+    ResourceConflict:    "资源冲突",
+    ResourceLimitExceed: "资源限制超出",
+    ResourceUnavailable: "资源不可用",
+}
+
+// GetErrorMessage 获取错误消息
+func GetErrorMessage(code int) string {
+    if message, exists := errorCodeMap[code]; exists {
+        return message
+    }
+    return "未知错误"
+}
+```
+
+## 3. 错误处理实现
+
+### 3.1 错误包装器
+```go
+// ErrorWrapper 错误包装器
+type ErrorWrapper struct {
+    err        error
+    code       int
+    message    string
+    details    string
+    fields     map[string]interface{}
+    stackTrace string
+}
+
+func (w *ErrorWrapper) Error() string {
+    return w.message
+}
+
+func (w *ErrorWrapper) Unwrap() error {
+    return w.err
+}
+
+func (w *ErrorWrapper) Code() int {
+    return w.code
+}
+
+func (w *ErrorWrapper) Details() string {
+    return w.details
+}
+
+func (w *ErrorWrapper) Fields() map[string]interface{} {
+    return w.fields
+}
+
+func (w *ErrorWrapper) StackTrace() string {
+    return w.stackTrace
+}
+```
+
+### 3.2 错误工厂函数
+```go
+// NewError 创建新的业务错误
+func NewError(code int, message string) *Error {
+    return &Error{
+        Code:      code,
+        Message:   message,
+        Timestamp: time.Now().Format(time.RFC3339),
+    }
+}
+
+// NewErrorWithDetails 创建带详细信息的错误
+func NewErrorWithDetails(code int, message, details string) *Error {
+    return &Error{
+        Code:      code,
+        Message:   message,
+        Details:   details,
+        Timestamp: time.Now().Format(time.RFC3339),
+    }
+}
+
+// NewErrorWithFields 创建带字段的错误
+func NewErrorWithFields(code int, message string, fields map[string]interface{}) *Error {
+    return &Error{
+        Code:      code,
+        Message:   message,
+        Fields:    fields,
+        Timestamp: time.Now().Format(time.RFC3339),
+    }
+}
+
+// WrapError 包装错误
+func WrapError(err error, code int, message string) *ErrorWrapper {
+    return &ErrorWrapper{
+        err:        err,
+        code:       code,
+        message:    message,
+        stackTrace: getStackTrace(),
+    }
+}
+```
+
+## 4. 错误处理中间件
+
+### 4.1 全局错误处理中间件
+```go
+// ErrorHandler 全局错误处理中间件
+func ErrorHandler() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        c.Next()
+        
+        // 检查是否有错误
+        if len(c.Errors) > 0 {
+            err := c.Errors.Last()
+            handleError(c, err.Err)
+        }
+    }
+}
+
+// handleError 处理错误
+func handleError(c *gin.Context, err error) {
+    var response *Error
+    
+    switch e := err.(type) {
+    case *Error:
+        response = e
+    case *ErrorWrapper:
+        response = &Error{
+            Code:      e.Code(),
+            Message:   e.Error(),
+            Details:   e.Details(),
+            Fields:    e.Fields(),
+            StackTrace: e.StackTrace(),
+        }
+    default:
+        response = &Error{
+            Code:      InternalServerError,
+            Message:   GetErrorMessage(InternalServerError),
+            Details:   err.Error(),
+        }
+    }
+    
+    // 添加请求ID
+    if requestID := c.GetString("request_id"); requestID != "" {
+        response.RequestID = requestID
+    }
+    
+    // 记录错误日志
+    logError(c, err, response)
+    
+    // 返回错误响应
+    c.JSON(getHTTPStatusCode(response.Code), response)
+}
+```
+
+### 4.2 错误日志记录
+```go
+// logError 记录错误日志
+func logError(c *gin.Context, err error, response *Error) {
+    fields := logrus.Fields{
+        "request_id": c.GetString("request_id"),
+        "error_code": response.Code,
+        "error_message": response.Message,
+        "error_details": response.Details,
+        "method": c.Request.Method,
+        "path": c.Request.URL.Path,
+        "ip": getClientIP(c.Request),
+    }
+    
+    if response.Fields != nil {
+        for k, v := range response.Fields {
+            fields["error_field_"+k] = v
+        }
+    }
+    
+    logger := log.GetLogger().WithContext(c.Request.Context()).WithFields(fields)
+    
+    // 根据错误级别记录日志
+    if response.Code >= 500 {
+        logger.Error("服务器错误")
+    } else if response.Code >= 400 {
+        logger.Warn("客户端错误")
+    } else {
+        logger.Info("业务错误")
+    }
+}
+```
+
+## 5. 错误处理策略
+
+### 5.1 错误处理原则
+- **快速失败**: 遇到错误时快速失败并返回错误信息
+- **错误传播**: 在适当的层级处理错误，不要忽略错误
+- **错误包装**: 为错误添加上下文信息
+- **错误分类**: 根据错误类型采用不同的处理策略
+
+### 5.2 错误处理策略
+- **系统错误**: 记录详细日志，返回通用错误信息
+- **业务错误**: 返回具体的业务错误信息
+- **验证错误**: 返回详细的验证失败信息
+- **网络错误**: 重试机制，超时处理
+- **数据库错误**: 连接池管理，事务回滚
+- **外部服务错误**: 熔断机制，降级处理
+
+### 5.3 错误恢复策略
+- **重试机制**: 对临时性错误进行重试
+- **熔断机制**: 防止错误扩散
+- **降级处理**: 提供备用方案
+- **超时控制**: 避免长时间等待
+
+## 6. 最佳实践
+
+### 6.1 错误设计原则
+- **一致性**: 错误格式和结构保持一致
+- **可读性**: 错误信息清晰易懂
+- **可追踪**: 包含足够的上下文信息
+- **安全性**: 不暴露敏感信息
+
+### 6.2 错误处理最佳实践
+- **不要忽略错误**: 始终检查和处理错误
+- **提供上下文**: 为错误添加足够的上下文信息
+- **记录日志**: 记录错误日志用于问题排查
+- **用户友好**: 向用户提供友好的错误信息
+- **错误分类**: 根据错误类型采用不同的处理策略
+
+### 6.3 错误监控
+- **错误统计**: 统计错误发生频率
+- **错误告警**: 对重要错误进行告警
+- **错误分析**: 分析错误模式和趋势
+- **性能影响**: 监控错误对性能的影响
+
+- **状态码映射**: 正确映射HTTP状态码
+- **国际化支持**: 支持多语言错误消息
+- **版本兼容**: 保持错误响应格式的向后兼容
+- **文档化**: 提供完整的错误码文档

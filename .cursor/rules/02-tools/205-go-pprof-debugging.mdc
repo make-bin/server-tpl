@@ -1,0 +1,219 @@
+
+# Go PProf调试规范
+
+## 1. 概述
+
+项目集成了Go语言的PProf性能分析工具，提供全面的性能分析和调试能力。PProf通过HTTP端点提供实时性能数据，支持CPU、内存、Goroutine、阻塞等多种分析类型。
+
+## 2. 配置规范
+
+### 2.1 配置文件
+```yaml
+# configs/config.yaml
+pprof:
+  enabled: false  # 生产环境建议关闭
+  path_prefix: /debug/pprof
+  port: 6060      # 可选，独立端口
+```
+
+### 2.2 环境变量
+```bash
+# PProf 配置
+PPROF_ENABLED=false
+PPROF_PATH_PREFIX=/debug/pprof
+PPROF_PORT=6060
+```
+
+## 3. 功能特性
+
+### 3.1 HTTP端点
+启用PProf后，以下端点将可用：
+- `/debug/pprof/` - PProf主页
+- `/debug/pprof/profile` - CPU分析（30秒采样）
+- `/debug/pprof/heap` - 堆内存分析
+- `/debug/pprof/goroutine` - Goroutine分析
+- `/debug/pprof/block` - 阻塞分析
+- `/debug/pprof/mutex` - 互斥锁分析
+- `/debug/pprof/allocs` - 内存分配分析
+- `/debug/pprof/trace` - 执行跟踪
+
+### 3.2 分析类型
+- **CPU分析**: 分析CPU使用情况，识别热点函数
+- **内存分析**: 分析内存分配模式，检测内存泄漏
+- **Goroutine分析**: 分析Goroutine数量，检测泄漏
+- **阻塞分析**: 分析程序阻塞情况，识别性能瓶颈
+- **互斥锁分析**: 分析锁竞争情况，检测死锁风险
+
+## 4. 使用规范
+
+### 4.1 基本使用
+```go
+import "github.com/make-bin/server-tpl/pkg/utils/pprof"
+
+// 创建PProf管理器
+config := &pprof.PProfConfig{
+    Enabled:    true,
+    PathPrefix: "/debug/pprof",
+}
+pprofManager := pprof.NewPProfManager(config)
+
+// CPU分析
+cpuFile, err := pprofManager.StartCPUProfile("cpu.prof")
+if err != nil {
+    return err
+}
+defer func() {
+    pprofManager.StopCPUProfile()
+    cpuFile.Close()
+}()
+
+// 堆内存分析
+if err := pprofManager.WriteHeapProfile("heap.prof"); err != nil {
+    return err
+}
+
+// 获取运行时统计
+stats := pprofManager.GetRuntimeStats()
+```
+
+### 4.2 高级功能
+```go
+// 启用阻塞分析
+pprofManager.EnableBlockProfiling(1)
+
+// 启用互斥锁分析
+pprofManager.EnableMutexProfiling(1)
+
+// 定期性能分析
+ctx := context.Background()
+pprofManager.StartPeriodicProfiling(ctx, 5*time.Minute, "./profiles")
+
+// 生成完整分析报告
+if err := pprofManager.GenerateFullProfile("./profiles"); err != nil {
+    return err
+}
+```
+
+## 5. 命令行工具使用
+
+### 5.1 基本命令
+```bash
+# CPU分析
+go tool pprof http://localhost:8080/debug/pprof/profile
+
+# 堆内存分析
+go tool pprof http://localhost:8080/debug/pprof/heap
+
+# Goroutine分析
+go tool pprof http://localhost:8080/debug/pprof/goroutine
+
+# 阻塞分析
+go tool pprof http://localhost:8080/debug/pprof/block
+
+# 互斥锁分析
+go tool pprof http://localhost:8080/debug/pprof/mutex
+
+# 内存分配分析
+go tool pprof http://localhost:8080/debug/pprof/allocs
+
+# 执行跟踪
+curl -o trace.out http://localhost:8080/debug/pprof/trace?seconds=30
+go tool trace trace.out
+```
+
+### 5.2 交互式分析
+```bash
+# 进入交互模式
+go tool pprof http://localhost:8080/debug/pprof/heap
+
+# 常用命令
+(pprof) top          # 显示最耗资源的函数
+(pprof) list func    # 显示特定函数的详细信息
+(pprof) web          # 在浏览器中打开可视化界面
+(pprof) pdf          # 生成PDF报告
+(pprof) svg          # 生成SVG图表
+(pprof) traces       # 显示调用栈
+(pprof) peek func    # 显示函数调用者
+```
+
+## 6. 性能分析最佳实践
+
+### 6.1 CPU分析
+```go
+// 在关键代码段进行CPU分析
+func processData(data []byte) error {
+    // 开始CPU分析
+    if cpuFile, err := os.Create("cpu.prof"); err == nil {
+        pprof.StartCPUProfile(cpuFile)
+        defer pprof.StopCPUProfile()
+    }
+    
+    // 执行数据处理
+    result := heavyComputation(data)
+    
+    return nil
+}
+```
+
+### 6.2 内存分析
+```go
+// 定期进行内存分析
+func monitorMemory() {
+    ticker := time.NewTicker(5 * time.Minute)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        if heapFile, err := os.Create(fmt.Sprintf("heap_%d.prof", time.Now().Unix())); err == nil {
+            pprof.WriteHeapProfile(heapFile)
+            heapFile.Close()
+        }
+    }
+}
+```
+
+### 6.3 Goroutine分析
+```go
+// 监控Goroutine数量
+func monitorGoroutines() {
+    ticker := time.NewTicker(1 * time.Minute)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        numGoroutines := runtime.NumGoroutine()
+        if numGoroutines > 1000 {
+            log.Printf("警告: Goroutine数量过多: %d", numGoroutines)
+            
+            // 生成Goroutine分析
+            if goroutineFile, err := os.Create("goroutine.prof"); err == nil {
+                pprof.Lookup("goroutine").WriteTo(goroutineFile, 0)
+                goroutineFile.Close()
+            }
+        }
+    }
+}
+```
+
+## 7. 最佳实践
+
+### 7.1 使用建议
+- **生产环境**: 谨慎启用，可能影响性能
+- **开发环境**: 建议启用，便于调试
+- **测试环境**: 根据需要启用
+- **安全考虑**: 限制访问权限，避免信息泄露
+
+### 7.2 性能影响
+- **CPU分析**: 对性能影响较大，建议短期使用
+- **内存分析**: 影响较小，可长期使用
+- **Goroutine分析**: 影响很小，可长期使用
+- **阻塞分析**: 影响中等，根据需要使用
+
+### 7.3 分析策略
+- **定期分析**: 定期进行性能分析
+- **问题导向**: 针对具体问题进行深入分析
+- **对比分析**: 对比不同版本或配置的性能
+- **趋势分析**: 分析性能变化趋势
+
+        annotations:
+          summary: "内存使用过高"
+          description: "堆内存使用: {{ $value }} bytes"
+```

@@ -1,0 +1,443 @@
+# 请求响应规范
+
+## 1. 概述
+
+本文档定义了 HTTP API 的请求和响应接口标准，包括统一的响应格式、业务错误码规范、国际化支持等，确保 API 的一致性和可维护性。
+
+## 2. 统一响应格式规范
+
+### 2.1 标准响应结构
+
+#### 2.1.1 成功响应格式
+```go
+// 标准成功响应
+{
+    "success": true,
+    "code": 200,
+    "message": "操作成功",
+    "data": {
+        // 具体业务数据
+    },
+    "timestamp": "2024-01-01T12:00:00Z",
+    "request_id": "req_123456789"
+}
+
+// 分页响应格式
+{
+    "success": true,
+    "code": 200,
+    "message": "查询成功",
+    "data": {
+        "items": [
+            // 数据列表
+        ],
+        "pagination": {
+            "page": 1,
+            "size": 10,
+            "total": 100,
+            "pages": 10
+        }
+    },
+    "timestamp": "2024-01-01T12:00:00Z",
+    "request_id": "req_123456789"
+}
+```
+
+#### 2.1.2 错误响应格式
+```go
+// 标准错误响应
+{
+    "success": false,
+    "code": 40001,
+    "message": "参数验证失败",
+    "error": "详细错误信息",
+    "details": {
+        "field": "username",
+        "reason": "用户名不能为空"
+    },
+    "timestamp": "2024-01-01T12:00:00Z",
+    "request_id": "req_123456789"
+}
+```
+
+### 2.2 响应结构定义
+
+#### 2.2.1 基础响应结构
+```go
+// Response 标准响应结构
+type Response struct {
+    Success   bool        `json:"success"`
+    Code      int         `json:"code"`
+    Message   string      `json:"message"`
+    Data      interface{} `json:"data,omitempty"`
+    Error     string      `json:"error,omitempty"`
+    Details   interface{} `json:"details,omitempty"`
+    Timestamp string      `json:"timestamp"`
+    RequestID string      `json:"request_id"`
+}
+
+// PaginationResponse 分页响应结构
+type PaginationResponse struct {
+    Items      interface{} `json:"items"`
+    Pagination Pagination  `json:"pagination"`
+}
+
+// Pagination 分页信息
+type Pagination struct {
+    Page  int `json:"page"`
+    Size  int `json:"size"`
+    Total int `json:"total"`
+    Pages int `json:"pages"`
+}
+
+// ErrorDetail 错误详情
+type ErrorDetail struct {
+    Field  string `json:"field"`
+    Reason string `json:"reason"`
+}
+```
+
+#### 2.2.2 响应工具函数
+```go
+// Success 成功响应
+func Success(c *gin.Context, data interface{}) {
+    requestID := getRequestID(c)
+    response := Response{
+        Success:   true,
+        Code:      CodeSuccess,
+        Message:   getMessage(c, "success"),
+        Data:      data,
+        Timestamp: time.Now().UTC().Format(time.RFC3339),
+        RequestID: requestID,
+    }
+    
+    c.JSON(http.StatusOK, response)
+}
+
+// Error 错误响应
+func Error(c *gin.Context, statusCode int, code int, message string, err error) {
+    requestID := getRequestID(c)
+    response := Response{
+        Success:   false,
+        Code:      code,
+        Message:   getMessage(c, message),
+        Timestamp: time.Now().UTC().Format(time.RFC3339),
+        RequestID: requestID,
+    }
+    
+    if err != nil {
+        response.Error = err.Error()
+    }
+    
+    c.JSON(statusCode, response)
+}
+
+// Page 分页响应
+func Page(c *gin.Context, items interface{}, page, size, total int) {
+    pages := (total + size - 1) / size
+    pagination := Pagination{
+        Page:  page,
+        Size:  size,
+        Total: total,
+        Pages: pages,
+    }
+    
+    data := PaginationResponse{
+        Items:      items,
+        Pagination: pagination,
+    }
+    
+    Success(c, data)
+}
+
+// ValidationError 参数验证错误
+func ValidationError(c *gin.Context, details []ErrorDetail) {
+    requestID := getRequestID(c)
+    response := Response{
+        Success:   false,
+        Code:      CodeValidationError,
+        Message:   getMessage(c, "validation_error"),
+        Details:   details,
+        Timestamp: time.Now().UTC().Format(time.RFC3339),
+        RequestID: requestID,
+    }
+    
+    c.JSON(http.StatusBadRequest, response)
+}
+```
+
+## 3. 业务错误码规范
+
+### 3.1 错误码定义
+
+#### 3.1.1 系统级错误码
+```go
+// 系统级错误码 (10000-19999)
+const (
+    // 成功
+    CodeSuccess = 200
+    
+    // 系统错误 (10000-10999)
+    CodeSystemError           = 10000
+    CodeDatabaseError         = 10001
+    CodeCacheError           = 10002
+    CodeNetworkError         = 10003
+    CodeServiceUnavailable   = 10004
+    CodeInternalServerError  = 10005
+    CodeConfigError          = 10006
+    CodeFileSystemError      = 10007
+    CodeMemoryError          = 10008
+    CodeTimeoutError         = 10009
+    
+    // 客户端错误 (20000-29999)
+    CodeValidationError      = 20000
+    CodeMissingParameter     = 20001
+    CodeInvalidParameter     = 20002
+    CodeParameterTypeError   = 20003
+    CodeUnauthorized         = 20004
+    CodeForbidden           = 20005
+    CodeNotFound            = 20006
+    CodeMethodNotAllowed    = 20007
+    CodeConflict            = 20008
+    CodeTooManyRequests     = 20009
+    CodeRequestTimeout      = 20010
+    CodePayloadTooLarge     = 20011
+    CodeUnsupportedMediaType = 20012
+)
+```
+
+#### 3.1.2 业务错误码
+```go
+// 业务错误码 (30000-99999)
+const (
+    // 用户相关错误 (30000-30999)
+    CodeUserNotFound         = 30000
+    CodeUserExists           = 30001
+    CodeUserDisabled         = 30002
+    CodeUserLocked           = 30003
+    CodeUserDeleted          = 30004
+    CodePasswordError        = 30005
+    CodePasswordExpired      = 30006
+    CodePasswordTooWeak      = 30007
+    CodeEmailExists          = 30008
+    CodePhoneExists          = 30009
+    CodeUsernameExists       = 30010
+    CodeUserProfileIncomplete = 30011
+    CodeUserVerificationRequired = 30012
+    CodeUserAccountSuspended = 30013
+    
+    // 订单相关错误 (31000-31999)
+    CodeOrderNotFound        = 31000
+    CodeOrderExists          = 31001
+    CodeOrderCancelled       = 31002
+    CodeOrderCompleted       = 31003
+    CodeOrderExpired         = 31004
+    CodeOrderPaid            = 31005
+    CodeOrderRefunded        = 31006
+    CodeOrderProcessing      = 31007
+    CodeOrderShipped         = 31008
+    CodeOrderDelivered       = 31009
+    CodeOrderReturned        = 31010
+    CodeOrderAmountInvalid   = 31011
+    CodeOrderQuantityInvalid = 31012
+    CodeOrderStatusInvalid   = 31013
+    
+    // 支付相关错误 (32000-32999)
+    CodePaymentFailed        = 32000
+    CodePaymentTimeout       = 32001
+    CodePaymentCancelled     = 32002
+    CodePaymentRefunded      = 32003
+    CodePaymentProcessing    = 32004
+    CodePaymentCompleted     = 32005
+    CodeInsufficientBalance  = 32006
+    CodePaymentMethodInvalid = 32007
+    CodePaymentAmountInvalid = 32008
+    CodePaymentCurrencyInvalid = 32009
+    CodePaymentGatewayError  = 32010
+    CodePaymentSignatureInvalid = 32011
+    CodePaymentOrderNotFound = 32012
+    CodePaymentDuplicate     = 32013
+)
+```
+
+### 3.2 错误码映射
+```go
+// 错误码映射表
+var errorCodeMap = map[int]string{
+    // 系统错误
+    CodeSystemError:          "系统错误",
+    CodeDatabaseError:        "数据库错误",
+    CodeCacheError:          "缓存错误",
+    CodeNetworkError:        "网络错误",
+    CodeServiceUnavailable:  "服务不可用",
+    CodeInternalServerError: "服务器内部错误",
+    CodeConfigError:         "配置错误",
+    CodeFileSystemError:     "文件系统错误",
+    CodeMemoryError:         "内存错误",
+    CodeTimeoutError:        "超时错误",
+    
+    // 客户端错误
+    CodeValidationError:     "参数验证失败",
+    CodeMissingParameter:    "缺少必需参数",
+    CodeInvalidParameter:    "无效参数",
+    CodeParameterTypeError:  "参数类型错误",
+    CodeUnauthorized:        "未授权访问",
+    CodeForbidden:          "禁止访问",
+    CodeNotFound:           "资源不存在",
+    CodeMethodNotAllowed:   "方法不允许",
+    CodeConflict:           "资源冲突",
+    CodeTooManyRequests:    "请求过于频繁",
+    CodeRequestTimeout:     "请求超时",
+    CodePayloadTooLarge:    "请求体过大",
+    CodeUnsupportedMediaType: "不支持的媒体类型",
+    
+    // 业务错误
+    CodeUserNotFound:        "用户不存在",
+    CodeUserExists:          "用户已存在",
+    CodeUserDisabled:        "用户已禁用",
+    CodeUserLocked:          "用户已锁定",
+    CodeUserDeleted:         "用户已删除",
+    CodePasswordError:       "密码错误",
+    CodePasswordExpired:     "密码已过期",
+    CodePasswordTooWeak:     "密码强度不足",
+    CodeEmailExists:         "邮箱已存在",
+    CodePhoneExists:         "手机号已存在",
+    CodeUsernameExists:      "用户名已存在",
+    CodeUserProfileIncomplete: "用户资料不完整",
+    CodeUserVerificationRequired: "需要验证用户",
+    CodeUserAccountSuspended: "用户账户已暂停",
+}
+
+// GetErrorMessage 获取错误消息
+func GetErrorMessage(code int) string {
+    if message, exists := errorCodeMap[code]; exists {
+        return message
+    }
+    return "未知错误"
+}
+```
+
+## 4. 请求参数规范
+
+### 4.1 请求结构体定义
+```go
+// 基础请求结构
+type BaseRequest struct {
+    RequestID string `json:"request_id,omitempty"`
+    Timestamp int64  `json:"timestamp,omitempty"`
+}
+
+// 分页请求结构
+type PageRequest struct {
+    Page     int    `json:"page" form:"page" binding:"omitempty,min=1" example:"1"`
+    Size     int    `json:"size" form:"size" binding:"omitempty,min=1,max=100" example:"10"`
+    SortBy   string `json:"sort_by" form:"sort_by" binding:"omitempty" example:"created_at"`
+    SortDesc bool   `json:"sort_desc" form:"sort_desc" binding:"omitempty" example:"true"`
+}
+
+// 搜索请求结构
+type SearchRequest struct {
+    Keyword string `json:"keyword" form:"keyword" binding:"omitempty,max=100" example:"搜索关键词"`
+    Filters map[string]interface{} `json:"filters,omitempty"`
+}
+```
+
+### 4.2 参数验证规范
+```go
+// 用户创建请求
+type CreateUserRequest struct {
+    Username string `json:"username" binding:"required,min=3,max=50,alphanum" example:"john_doe"`
+    Email    string `json:"email" binding:"required,email" example:"john@example.com"`
+    Password string `json:"password" binding:"required,min=8" example:"Password123!"`
+    Phone    string `json:"phone" binding:"omitempty,phone" example:"13800138000"`
+    Age      int    `json:"age" binding:"omitempty,gte=0,lte=150" example:"25"`
+}
+
+// 用户更新请求
+type UpdateUserRequest struct {
+    Username string `json:"username" binding:"omitempty,min=3,max=50,alphanum" example:"john_doe"`
+    Email    string `json:"email" binding:"omitempty,email" example:"john@example.com"`
+    Phone    string `json:"phone" binding:"omitempty,phone" example:"13800138000"`
+    Age      int    `json:"age" binding:"omitempty,gte=0,lte=150" example:"25"`
+}
+```
+
+## 5. 国际化支持
+
+### 5.1 多语言消息
+```go
+// 消息映射表
+var messageMap = map[string]map[string]string{
+    "zh-CN": {
+        "success":           "操作成功",
+        "validation_error":  "参数验证失败",
+        "user_not_found":    "用户不存在",
+        "user_created":      "用户创建成功",
+        "user_updated":      "用户更新成功",
+        "user_deleted":      "用户删除成功",
+    },
+    "en-US": {
+        "success":           "Operation successful",
+        "validation_error":  "Parameter validation failed",
+        "user_not_found":    "User not found",
+        "user_created":      "User created successfully",
+        "user_updated":      "User updated successfully",
+        "user_deleted":      "User deleted successfully",
+    },
+}
+
+// 获取本地化消息
+func getMessage(c *gin.Context, key string) string {
+    lang := getLanguage(c)
+    if messages, exists := messageMap[lang]; exists {
+        if message, exists := messages[key]; exists {
+            return message
+        }
+    }
+    return key
+}
+```
+
+### 5.2 语言检测
+```go
+// 获取语言
+func getLanguage(c *gin.Context) string {
+    // 1. 检查查询参数
+    if lang := c.Query("lang"); lang != "" {
+        return lang
+    }
+    
+    // 2. 检查请求头
+    if acceptLang := c.GetHeader("Accept-Language"); acceptLang != "" {
+        return parseAcceptLanguage(acceptLang)
+    }
+    
+    // 3. 检查Cookie
+    if lang, err := c.Cookie("lang"); err == nil && lang != "" {
+        return lang
+    }
+    
+    // 4. 返回默认语言
+    return "zh-CN"
+}
+```
+
+## 6. 最佳实践
+
+### 6.1 响应设计最佳实践
+- **一致性**: 保持响应格式的一致性
+- **完整性**: 提供完整的错误信息
+- **可读性**: 使用清晰的错误消息
+- **国际化**: 支持多语言错误消息
+
+### 6.2 错误处理最佳实践
+- **分类处理**: 根据错误类型采用不同的处理策略
+- **日志记录**: 记录详细的错误日志
+- **用户友好**: 向用户提供友好的错误信息
+- **安全考虑**: 避免暴露敏感信息
+
+### 6.3 参数验证最佳实践
+- **严格验证**: 严格验证所有输入参数
+- **类型检查**: 确保参数类型正确
+- **范围检查**: 验证参数值的合理范围
+- **格式验证**: 验证参数格式的正确性

@@ -1,0 +1,87 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories 
+# Note: vendor/ is included in version control for build consistency
+# vendor/
+
+# Go workspace file
+go.work
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build artifacts
+/server-tpl
+/server-tpl_unix
+/main
+/bin/
+
+# Log files
+*.log
+logs/
+
+# Configuration files with sensitive data
+.env
+.env.local
+.env.production
+config.local.yml
+config.production.yml
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Test coverage files
+coverage.out
+coverage.html
+coverage.xml
+
+# Documentation generated files
+docs/swagger.json
+docs/swagger.yaml
+docs/docs.go
+
+# Docker related
+.dockerignore
+
+# Kubernetes secrets
+*secret*.yaml
+*secret*.yml
+
+# Backup files
+*.bak
+*.backup
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Local development files
+docker-compose.override.yml
+local/

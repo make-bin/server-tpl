@@ -1,0 +1,44 @@
+# 依赖管理配置文件
+# Dependency Management Configuration
+
+# Go 版本要求
+GO_VERSION=1.21
+
+# 构建模式 (vendor 优先)
+BUILD_MODE=vendor
+
+# Vendor 目录设置
+VENDOR_ENABLED=true
+VENDOR_PATH=vendor
+
+# 安全检查配置
+SECURITY_CHECK_ENABLED=true
+VULN_CHECK_ENABLED=true
+
+# 更新策略
+AUTO_UPDATE=false
+UPDATE_POLICY=manual
+
+# 依赖来源配置
+GOPROXY=https://proxy.golang.org,direct
+GOSUMDB=sum.golang.org
+
+# 构建标签
+BUILD_TAGS=""
+
+# 排除的依赖模式 (用于安全检查)
+EXCLUDE_PATTERNS="*_test.go,*/testdata/*,*/examples/*"
+
+# 许可证检查
+LICENSE_CHECK_ENABLED=false
+ALLOWED_LICENSES="MIT,Apache-2.0,BSD-3-Clause,BSD-2-Clause"
+
+# 依赖大小限制 (MB)
+MAX_VENDOR_SIZE=500
+
+# 日志级别
+LOG_LEVEL=info
+
+# 备份设置
+BACKUP_ENABLED=true
+BACKUP_COUNT=5

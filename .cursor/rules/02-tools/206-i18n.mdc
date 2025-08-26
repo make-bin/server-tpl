@@ -1,0 +1,382 @@
+# 国际化规范
+
+## 1. 概述
+
+本文档定义了项目中 i18n 国际化和本地化工具的实现规范，包括多语言支持、本地化配置、翻译管理、格式化处理等标准，确保应用程序的国际化一致性和可维护性。
+
+## 2. 国际化架构规范
+
+### 2.1 支持语言规范
+
+#### 2.1.1 语言代码标准
+```go
+// 支持的语言代码规范
+const (
+    // 中文简体
+    LanguageZhCN = "zh-CN"
+    
+    // 中文繁体
+    LanguageZhTW = "zh-TW"
+    
+    // 英文美国
+    LanguageEnUS = "en-US"
+    
+    // 英文英国
+    LanguageEnGB = "en-GB"
+    
+    // 日文
+    LanguageJaJP = "ja-JP"
+    
+    // 韩文
+    LanguageKoKR = "ko-KR"
+    
+    // 法文
+    LanguageFrFR = "fr-FR"
+    
+    // 德文
+    LanguageDeDE = "de-DE"
+    
+    // 西班牙文
+    LanguageEsES = "es-ES"
+    
+    // 葡萄牙文
+    LanguagePtBR = "pt-BR"
+)
+
+// 默认语言
+const DefaultLanguage = LanguageZhCN
+
+// 语言映射表
+var LanguageMap = map[string]string{
+    LanguageZhCN: "简体中文",
+    LanguageZhTW: "繁體中文",
+    LanguageEnUS: "English (US)",
+    LanguageEnGB: "English (UK)",
+    LanguageJaJP: "日本語",
+    LanguageKoKR: "한국어",
+    LanguageFrFR: "Français",
+    LanguageDeDE: "Deutsch",
+    LanguageEsES: "Español",
+    LanguagePtBR: "Português",
+}
+```
+
+#### 2.1.2 语言检测优先级
+1. **用户设置**: 用户明确选择的语言
+2. **请求头**: Accept-Language 请求头
+3. **查询参数**: URL 中的 lang 参数
+4. **Cookie**: 浏览器存储的语言偏好
+5. **默认语言**: 系统默认语言
+
+### 2.2 翻译文件规范
+
+#### 2.2.1 文件结构规范
+```
+locales/
+├── zh-CN/
+│   ├── common.json      # 通用翻译
+│   ├── auth.json        # 认证相关
+│   ├── user.json        # 用户相关
+│   ├── order.json       # 订单相关
+│   ├── payment.json     # 支付相关
+│   └── error.json       # 错误信息
+├── en-US/
+│   ├── common.json
+│   ├── auth.json
+│   ├── user.json
+│   ├── order.json
+│   ├── payment.json
+│   └── error.json
+└── ja-JP/
+    ├── common.json
+    ├── auth.json
+    ├── user.json
+    ├── order.json
+    ├── payment.json
+    └── error.json
+```
+
+#### 2.2.2 翻译键命名规范
+```json
+{
+  "common": {
+    "success": "操作成功",
+    "error": "操作失败",
+    "loading": "加载中...",
+    "confirm": "确认",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "view": "查看",
+    "search": "搜索",
+    "filter": "筛选",
+    "sort": "排序",
+    "refresh": "刷新",
+    "back": "返回",
+    "next": "下一步",
+    "previous": "上一步",
+    "submit": "提交",
+    "reset": "重置"
+  },
+  "auth": {
+    "login": "登录",
+    "logout": "退出登录",
+    "register": "注册",
+    "forgot_password": "忘记密码",
+    "reset_password": "重置密码",
+    "change_password": "修改密码",
+    "username": "用户名",
+    "password": "密码",
+    "email": "邮箱",
+    "phone": "手机号",
+    "verification_code": "验证码",
+    "remember_me": "记住我",
+    "login_success": "登录成功",
+    "login_failed": "登录失败",
+    "invalid_credentials": "用户名或密码错误",
+    "account_locked": "账户已被锁定",
+    "account_disabled": "账户已被禁用"
+  },
+  "user": {
+    "profile": "个人资料",
+    "settings": "设置",
+    "avatar": "头像",
+    "nickname": "昵称",
+    "real_name": "真实姓名",
+    "gender": "性别",
+    "birthday": "生日",
+    "address": "地址",
+    "country": "国家",
+    "province": "省份",
+    "city": "城市",
+    "district": "区县",
+    "postal_code": "邮编",
+    "user_status": {
+      "active": "活跃",
+      "inactive": "非活跃",
+      "locked": "锁定",
+      "deleted": "已删除"
+    },
+    "gender_options": {
+      "male": "男",
+      "female": "女",
+      "other": "其他",
+      "prefer_not_to_say": "不愿透露"
+    }
+  },
+  "error": {
+    "system_error": "系统错误",
+    "network_error": "网络错误",
+    "database_error": "数据库错误",
+    "validation_error": "参数验证失败",
+    "unauthorized": "未授权访问",
+    "forbidden": "访问被拒绝",
+    "not_found": "资源不存在",
+    "conflict": "资源冲突",
+    "rate_limit": "请求过于频繁",
+    "timeout": "请求超时",
+    "server_error": "服务器内部错误"
+  }
+}
+```
+
+## 3. 国际化工具规范
+
+### 3.1 核心接口定义
+
+#### 3.1.1 翻译器接口
+```go
+// Translator 翻译器接口
+type Translator interface {
+    // Translate 翻译指定键
+    Translate(key string, args ...interface{}) string
+    
+    // TranslateWithLang 使用指定语言翻译
+    TranslateWithLang(lang, key string, args ...interface{}) string
+    
+    // GetLanguage 获取当前语言
+    GetLanguage() string
+    
+    // SetLanguage 设置当前语言
+    SetLanguage(lang string) error
+    
+    // GetSupportedLanguages 获取支持的语言列表
+    GetSupportedLanguages() []string
+    
+    // HasTranslation 检查是否有翻译
+    HasTranslation(key string) bool
+    
+    // Reload 重新加载翻译文件
+    Reload() error
+}
+```
+
+#### 3.1.2 本地化器接口
+```go
+// Localizer 本地化器接口
+type Localizer interface {
+    // FormatNumber 格式化数字
+    FormatNumber(number interface{}) string
+    
+    // FormatCurrency 格式化货币
+    FormatCurrency(amount interface{}, currency string) string
+    
+    // FormatDate 格式化日期
+    FormatDate(date time.Time, format string) string
+    
+    // FormatTime 格式化时间
+    FormatTime(date time.Time, format string) string
+    
+    // FormatDateTime 格式化日期时间
+    FormatDateTime(date time.Time, format string) string
+    
+    // ParseDate 解析日期
+    ParseDate(dateStr, format string) (time.Time, error)
+    
+    // GetTimeZone 获取时区
+    GetTimeZone() *time.Location
+    
+    // SetTimeZone 设置时区
+    SetTimeZone(tz string) error
+}
+```
+
+### 3.2 核心功能
+- 多语言翻译管理
+- 动态语言切换
+- 参数化翻译
+- 数字和货币格式化
+- 日期时间本地化
+- 时区处理
+- 翻译文件热重载
+
+## 4. 使用规范
+
+### 4.1 基本使用
+```go
+// 创建翻译器
+translator := i18n.NewTranslator("locales")
+
+// 设置语言
+translator.SetLanguage("zh-CN")
+
+// 翻译文本
+message := translator.Translate("common.success")
+// 输出: "操作成功"
+
+// 带参数翻译
+message := translator.Translate("user.welcome", "张三")
+// 输出: "欢迎，张三！"
+
+// 使用指定语言翻译
+message := translator.TranslateWithLang("en-US", "common.error")
+// 输出: "Error"
+```
+
+### 4.2 本地化使用
+```go
+// 创建本地化器
+localizer := i18n.NewLocalizer("zh-CN", "Asia/Shanghai")
+
+// 格式化数字
+number := localizer.FormatNumber(1234.56)
+// 输出: "1,234.56"
+
+// 格式化货币
+currency := localizer.FormatCurrency(1234.56, "CNY")
+// 输出: "¥1,234.56"
+
+// 格式化日期
+date := localizer.FormatDate(time.Now(), "2006-01-02")
+// 输出: "2024-01-15"
+
+// 格式化时间
+time := localizer.FormatTime(time.Now(), "15:04:05")
+// 输出: "14:30:25"
+```
+
+## 5. 中间件集成
+
+### 5.1 语言检测中间件
+```go
+// LanguageMiddleware 语言检测中间件
+func LanguageMiddleware(translator i18n.Translator) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 检测语言
+        lang := detectLanguage(c)
+        
+        // 设置语言
+        translator.SetLanguage(lang)
+        
+        // 将翻译器添加到上下文
+        c.Set("translator", translator)
+        
+        c.Next()
+    }
+}
+
+// detectLanguage 检测语言
+func detectLanguage(c *gin.Context) string {
+    // 1. 检查查询参数
+    if lang := c.Query("lang"); lang != "" {
+        return lang
+    }
+    
+    // 2. 检查请求头
+    if acceptLang := c.GetHeader("Accept-Language"); acceptLang != "" {
+        return parseAcceptLanguage(acceptLang)
+    }
+    
+    // 3. 检查Cookie
+    if lang, err := c.Cookie("lang"); err == nil && lang != "" {
+        return lang
+    }
+    
+    // 4. 返回默认语言
+    return i18n.DefaultLanguage
+}
+```
+
+### 5.2 翻译助手函数
+```go
+// T 翻译助手函数
+func T(c *gin.Context, key string, args ...interface{}) string {
+    if translator, exists := c.Get("translator"); exists {
+        if t, ok := translator.(i18n.Translator); ok {
+            return t.Translate(key, args...)
+        }
+    }
+    return key
+}
+
+// TWithLang 使用指定语言翻译助手函数
+func TWithLang(c *gin.Context, lang, key string, args ...interface{}) string {
+    if translator, exists := c.Get("translator"); exists {
+        if t, ok := translator.(i18n.Translator); ok {
+            return t.TranslateWithLang(lang, key, args...)
+        }
+    }
+    return key
+}
+```
+
+## 6. 最佳实践
+
+### 6.1 翻译管理
+- **键命名**: 使用点分隔的层次结构
+- **模块化**: 按功能模块组织翻译文件
+- **一致性**: 保持翻译键的一致性
+- **完整性**: 确保所有语言版本完整
+
+### 6.2 性能优化
+- **缓存机制**: 缓存翻译结果
+- **懒加载**: 按需加载翻译文件
+- **预编译**: 预编译常用翻译
+- **内存管理**: 及时释放无用翻译
+
+### 6.3 维护建议
+- **版本控制**: 翻译文件纳入版本控制
+- **自动化**: 自动化翻译文件检查
+- **测试**: 编写翻译完整性测试
+- **文档**: 维护翻译键文档

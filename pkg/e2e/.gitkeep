@@ -1,0 +1,6 @@
+# This file ensures the e2e directory is tracked by git
+# This directory will contain:
+# - End-to-end integration tests
+# - API testing suites
+# - Performance tests
+# - Load testing configurations

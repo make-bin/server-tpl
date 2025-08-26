@@ -1,0 +1,13 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+# 基础设施层
+
+## 1. 存储管理
+@.cursor/rules/03-infra/401-gin-framework-specification.mdc
+
+## 2. 中间件管理
+@.cursor/rules/03-infra/302-middleware-architechture.mdc

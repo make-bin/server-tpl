@@ -1,0 +1,275 @@
+
+# 存储架构设计规范
+
+## 1. 概述
+
+本规范定义了Go HTTP Server项目的存储架构设计，采用统一的抽象接口层，支持多种存储后端。
+
+## 2. 抽象接口层
+
+项目采用统一的存储抽象接口，支持多种存储后端：
+
+```go
+// Entity 数据库实体接口
+type Entity interface {
+    SetCreateTime(time.Time)
+    SetUpdateTime(time.Time)
+    PrimaryKey() string
+    TableName() string
+    ShortTableName() string
+    Index() map[string]interface{}
+}
+
+// DataStore 数据存储接口
+type DataStore interface {
+    Connect(ctx context.Context) error
+    Disconnect(ctx context.Context) error
+    HealthCheck(ctx context.Context) error
+    BeginTx(ctx context.Context) (Transaction, error)
+    
+    Add(ctx context.Context, entity Entity) error
+    BatchAdd(ctx context.Context, entities []Entity) error
+    Put(ctx context.Context, entity Entity) error
+    Delete(ctx context.Context, entity Entity) error
+    Get(ctx context.Context, entity Entity) error
+    List(ctx context.Context, query Entity, options *ListOptions) ([]Entity, error)
+    Count(ctx context.Context, entity Entity, options *FilterOptions) (int64, error)
+    IsExist(ctx context.Context, entity Entity) (bool, error)
+}
+
+// Transaction 事务接口
+type Transaction interface {
+    Commit() error
+    Rollback() error
+    Add(ctx context.Context, entity Entity) error
+    Put(ctx context.Context, entity Entity) error
+    Delete(ctx context.Context, entity Entity) error
+}
+```
+
+## 3. 支持的存储后端
+
+### 3.1 PostgreSQL
+- **用途**: 生产环境主数据库
+- **特点**: 功能完整、性能稳定、社区活跃
+- **适用场景**: 生产环境、复杂查询
+
+### 3.2 OpenGauss
+- **用途**: 兼容 PostgreSQL 的国产数据库
+- **特点**: 自主可控、兼容性好
+- **适用场景**: 国产化要求、政府项目
+
+### 3.3 Memory
+- **用途**: 内存存储，用于测试和开发
+- **特点**: 速度快、无需外部依赖
+- **适用场景**: 单元测试、开发调试
+
+## 4. 工厂模式
+
+使用工厂模式创建存储实例：
+
+```go
+// 创建存储实例
+config := &datastore.Config{
+    Type:     "memory", // 或 "postgresql", "opengauss"
+    Host:     "localhost",
+    Port:     5432,
+    User:     "postgres",
+    Password: "password",
+    Database: "server_tpl",
+}
+
+store, err := factory.NewDataStore(config)
+```
+
+## 5. 事务管理
+
+### 5.1 事务使用规范
+```go
+func (s *userService) CreateUserWithProfile(ctx context.Context, user *User, profile *Profile) error {
+    tx, err := s.store.BeginTx(ctx)
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+    
+    // 创建用户
+    if err := tx.Add(ctx, user); err != nil {
+        return err
+    }
+    
+    // 创建用户档案
+    profile.UserID = user.ID
+    if err := tx.Add(ctx, profile); err != nil {
+        return err
+    }
+    
+    return tx.Commit()
+}
+```
+
+## 6. 查询优化
+
+### 6.1 分页查询
+```go
+// ListOptions 列表查询选项
+type ListOptions struct {
+    Page     int                    `json:"page"`
+    Size     int                    `json:"size"`
+    SortBy   string                 `json:"sort_by"`
+    SortDesc bool                   `json:"sort_desc"`
+    Filters  map[string]interface{} `json:"filters"`
+}
+```
+
+### 6.2 索引设计
+```go
+// 实体索引定义
+func (u *User) Index() map[string]interface{} {
+    return map[string]interface{}{
+        "email": u.Email,
+        "name":  u.Name,
+    }
+}
+```
+
+## 7. 连接池管理
+
+### 7.1 连接池配置
+```go
+type Config struct {
+    Type            string        `json:"type"`
+    Host            string        `json:"host"`
+    Port            int           `json:"port"`
+    User            string        `json:"user"`
+    Password        string        `json:"password"`
+    Database        string        `json:"database"`
+    MaxOpenConns    int           `json:"max_open_conns"`
+    MaxIdleConns    int           `json:"max_idle_conns"`
+    ConnMaxLifetime time.Duration `json:"conn_max_lifetime"`
+}
+```
+
+### 7.2 健康检查
+```go
+func (p *PostgreSQLStore) HealthCheck(ctx context.Context) error {
+    return p.db.WithContext(ctx).Raw("SELECT 1").Error
+}
+```
+
+## 8. 数据迁移
+
+### 8.1 自动迁移
+```go
+func (p *PostgreSQLStore) Connect(ctx context.Context) error {
+    // 连接数据库
+    db, err := gorm.Open(postgres.Open(p.dsn), &gorm.Config{})
+    if err != nil {
+        return err
+    }
+    
+    // 自动迁移
+    err = db.AutoMigrate(&User{}, &Application{}, &Variable{})
+    if err != nil {
+        return err
+    }
+    
+    p.db = db
+    return nil
+}
+```
+
+### 8.2 手动迁移
+```go
+// 执行SQL迁移脚本
+func (p *PostgreSQLStore) Migrate(ctx context.Context, sql string) error {
+    return p.db.WithContext(ctx).Exec(sql).Error
+}
+```
+
+## 9. 缓存策略
+
+### 9.1 缓存接口
+```go
+type Cache interface {
+    Get(ctx context.Context, key string) (interface{}, error)
+    Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error
+    Delete(ctx context.Context, key string) error
+    Clear(ctx context.Context) error
+}
+```
+
+### 9.2 缓存使用
+```go
+func (s *userService) GetUser(ctx context.Context, id string) (*User, error) {
+    // 先从缓存获取
+    if cached, err := s.cache.Get(ctx, "user:"+id); err == nil {
+        if user, ok := cached.(*User); ok {
+            return user, nil
+        }
+    }
+    
+    // 从数据库获取
+    user := &User{ID: id}
+    if err := s.store.Get(ctx, user); err != nil {
+        return nil, err
+    }
+    
+    // 设置缓存
+    s.cache.Set(ctx, "user:"+id, user, time.Hour)
+    
+    return user, nil
+}
+```
+
+## 10. 性能监控
+
+### 10.1 查询性能监控
+```go
+func (p *PostgreSQLStore) Get(ctx context.Context, entity Entity) error {
+    start := time.Now()
+    defer func() {
+        metrics.QueryDuration.WithLabelValues("get", entity.TableName()).Observe(time.Since(start).Seconds())
+    }()
+    
+    return p.db.WithContext(ctx).First(entity).Error
+}
+```
+
+### 10.2 连接池监控
+```go
+func (p *PostgreSQLStore) getStats() map[string]interface{} {
+    sqlDB, _ := p.db.DB()
+    return map[string]interface{}{
+        "max_open_connections": sqlDB.Stats().MaxOpenConnections,
+        "open_connections":     sqlDB.Stats().OpenConnections,
+        "in_use":              sqlDB.Stats().InUse,
+        "idle":                sqlDB.Stats().Idle,
+    }
+}
+```
+
+## 11. 最佳实践
+
+### 11.1 数据访问最佳实践
+- **连接池管理**: 合理配置连接池参数
+- **事务使用**: 在需要原子性的操作中使用事务
+- **索引优化**: 为常用查询字段创建索引
+- **查询优化**: 避免N+1查询问题
+
+### 11.2 缓存最佳实践
+- **缓存策略**: 根据数据访问模式选择合适的缓存策略
+- **缓存失效**: 合理设置缓存过期时间
+- **缓存穿透**: 防止缓存穿透攻击
+- **缓存一致性**: 保证缓存与数据库的一致性
+
+### 11.3 性能优化最佳实践
+- **监控指标**: 监控查询性能、连接池状态
+- **慢查询分析**: 定期分析慢查询并优化
+- **批量操作**: 使用批量操作提高性能
+- **读写分离**: 在适当场景下使用读写分离
+
+        "idle":                sqlDB.Stats().Idle,
+    }
+}
+```

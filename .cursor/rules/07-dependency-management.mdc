@@ -1,0 +1,29 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+## 依赖管理规范
+
+### 1.5.1 Vendor 目录缓存
+项目默认使用 vendor 目录进行依赖缓存，确保构建的一致性和离线构建能力：
+
+```bash
+# 初始化 vendor 目录
+go mod vendor
+
+# 使用 vendor 目录构建
+go build -mod=vendor ./...
+
+# 更新依赖并重新生成 vendor
+go mod tidy
+go mod vendor
+```
+
+### 1.5.2 依赖管理最佳实践
+1. **版本锁定**: 使用 `go.mod` 和 `go.sum` 锁定依赖版本
+2. **本地缓存**: 使用 `vendor/` 目录缓存所有依赖
+3. **定期更新**: 定期更新依赖版本，确保安全性
+4. **构建一致性**: 使用 `-mod=vendor` 确保构建一致性
+

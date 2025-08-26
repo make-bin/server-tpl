@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-tpl
+  labels:
+    app: server-tpl
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: server-tpl
+  template:
+    metadata:
+      labels:
+        app: server-tpl
+    spec:
+      containers:
+      - name: server-tpl
+        image: server-tpl:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: PORT
+          value: "8080"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: DB_TYPE
+          value: "postgresql"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: server-tpl-secrets
+              key: db-host
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: server-tpl-secrets
+              key: db-username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: server-tpl-secrets
+              key: db-password
+        - name: DB_DATABASE
+          value: "server_tpl"
+        - name: REDIS_ADDRESS
+          valueFrom:
+            secretKeyRef:
+              name: server-tpl-secrets
+              key: redis-address
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-tpl-service
+spec:
+  selector:
+    app: server-tpl
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: server-tpl-secrets
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual values
+  db-host: bG9jYWxob3N0        # localhost
+  db-username: cG9zdGdyZXM=    # postgres
+  db-password: ""              # empty password
+  redis-address: bG9jYWxob3N0OjYzNzk=  # localhost:6379
